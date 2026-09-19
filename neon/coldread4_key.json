@@ -1,0 +1,11 @@
+{
+ "cr4_n1.png": "boss-idle",
+ "cr4_n2.png": "rush-idle",
+ "cr4_n3.png": "rush-tele",
+ "cr4_n4.png": "guard-swing",
+ "cr4_n5.png": "guard-tele",
+ "cr4_n6.png": "rush-swing",
+ "cr4_n7.png": "boss-swing",
+ "cr4_n8.png": "boss-tele",
+ "cr4_n9.png": "guard-idle"
+}

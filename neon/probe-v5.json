@@ -1,0 +1,630 @@
+{
+ "level": {
+  "events": [
+   {
+    "id": "start",
+    "kind": "空街",
+    "x": 0,
+    "note": "起步：沒有敵人，讓玩家先按兩下"
+   },
+   {
+    "id": "pit",
+    "kind": "坑",
+    "x": 980,
+    "note": "第一個要跳過的坑（寬 260）"
+   },
+   {
+    "id": "wave1",
+    "kind": "敵人",
+    "x": 1420,
+    "note": "第一波：兩個直衝的"
+   },
+   {
+    "id": "wall",
+    "kind": "高牆",
+    "x": 2000,
+    "note": "高牆：踩招牌平台一段，再跳上高架街（兩段跳）"
+   },
+   {
+    "id": "breaker",
+    "kind": "機關",
+    "x": 3320,
+    "note": "電閘：打它會讓右邊巨幅招牌掉下來砸人"
+   },
+   {
+    "id": "wave2",
+    "kind": "敵人",
+    "x": 3380,
+    "note": "第二波：直衝＋格擋＋投擲各一"
+   },
+   {
+    "id": "boss",
+    "kind": "小頭目",
+    "x": 4250,
+    "note": "小頭目：會衝、會格擋、會叫東西砸你"
+   },
+   {
+    "id": "goal",
+    "kind": "終點",
+    "x": 4880,
+    "note": "走到這裡就結束"
+   }
+  ],
+  "solids": 6,
+  "terrainFinite": true,
+  "levelEnd": 4980,
+  "rightWall": 4980
+ },
+ "feel": {
+  "hitStopLight": {
+   "design": 3,
+   "measured": 3
+  },
+  "shake": {
+   "design": 9,
+   "peak": 9,
+   "seq": [
+    9,
+    5.4,
+    3.24,
+    1.94,
+    1.17,
+    0.7,
+    0.42,
+    0.25,
+    0.15
+   ],
+   "framesToUnder1": 5
+  },
+  "knockback": {
+   "design": "90~260",
+   "measured": 115.3
+  },
+  "hitStopHeavy": {
+   "design": 5,
+   "measured": 5
+  },
+  "heavyMove": "heavy",
+  "heavyShakePeak": 16,
+  "moveAudio": {
+   "freqs": {
+    "quick": 520,
+    "dash": 660,
+    "heavy": 420
+   },
+   "distinct": true
+  },
+  "slam": {
+   "happened": true,
+   "particles": 52,
+   "hitStop": 6,
+   "design": "≥12 粒、停 5 幀",
+   "dbg": {
+    "ex": 1766,
+    "ey": 880,
+    "prop": 1760,
+    "move": "heavy",
+    "px": 1585,
+    "hits": 2
+   }
+  },
+  "whiffRecover": {
+   "design": 0.32,
+   "measuredSeconds": 0.33
+  },
+  "parry": {
+   "happened": true,
+   "hitStop": 10,
+   "particles": 46,
+   "slowScale": 0.35,
+   "slowLeft": 0.5,
+   "knockback": 319.3,
+   "design": "停 9 幀、放慢 0.35×、≥28 粒、彈飛 ≥250"
+  }
+ },
+ "bot": {
+  "mode": "dumb",
+  "seed": 1,
+  "finished": false,
+  "died": true,
+  "seconds": 37.1,
+  "reachedX": 3481,
+  "hits": 89,
+  "parries": 0,
+  "whiffCtx": [
+   {
+    "rel": 130,
+    "face": 1,
+    "ey": 880,
+    "py": 880,
+    "kb": 0,
+    "dead": 0
+   },
+   {
+    "rel": 138,
+    "face": -1,
+    "ey": 880,
+    "py": 880,
+    "kb": 1,
+    "dead": 0
+   },
+   {
+    "rel": 134,
+    "face": 1,
+    "ey": 880,
+    "py": 880,
+    "kb": 0,
+    "dead": 0
+   }
+  ],
+  "moves": {
+   "quick": 69
+  },
+  "cuts": 0,
+  "breaks": 0,
+  "deflects": 0,
+  "dbg": {
+   "gb": 0,
+   "dt": 0,
+   "dh": 0
+  },
+  "whiffs": 4,
+  "gotHit": 13,
+  "slams": 31,
+  "crushedBySign": 0,
+  "hp": 0,
+  "events": [
+   {
+    "id": "start",
+    "t": 0,
+    "x": 122
+   },
+   {
+    "id": "pit",
+    "t": 2.1,
+    "x": 982
+   },
+   {
+    "id": "wave1",
+    "t": 3.2,
+    "x": 1426
+   },
+   {
+    "id": "wall",
+    "t": 32.1,
+    "x": 2005
+   },
+   {
+    "id": "breaker",
+    "t": 36.1,
+    "x": 3322
+   },
+   {
+    "id": "wave2",
+    "t": 36.4,
+    "x": 3381
+   }
+  ],
+  "bossShare": null,
+  "alive": [
+   {
+    "t": "rush",
+    "x": 3535,
+    "hp": 580
+   },
+   {
+    "t": "guard",
+    "x": 3774,
+    "hp": 880
+   },
+   {
+    "t": "throw",
+    "x": 4045,
+    "hp": 520
+   }
+  ]
+ },
+ "contrast": {
+  "samples": [
+   {
+    "x": 120,
+    "px": 1484,
+    "median": 14.33,
+    "p10": 3.41,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 369,
+    "px": 1542,
+    "median": 7.96,
+    "p10": 2.2,
+    "occluded": 0.145,
+    "headOccluded": 0
+   },
+   {
+    "x": 619,
+    "px": 1454,
+    "median": 16.43,
+    "p10": 4.09,
+    "occluded": 0.089,
+    "headOccluded": 0
+   },
+   {
+    "x": 868,
+    "px": 1522,
+    "median": 14.05,
+    "p10": 2.27,
+    "occluded": 0.176,
+    "headOccluded": 0
+   },
+   {
+    "x": 1118,
+    "px": 1462,
+    "median": 16.43,
+    "p10": 3.91,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 1367,
+    "px": 1600,
+    "median": 13.76,
+    "p10": 1.81,
+    "occluded": 0.189,
+    "headOccluded": 0
+   },
+   {
+    "x": 1617,
+    "px": 1453,
+    "median": 16.43,
+    "p10": 4.11,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 1866,
+    "px": 1585,
+    "median": 12.36,
+    "p10": 1.43,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 2116,
+    "px": 1510,
+    "median": 16.41,
+    "p10": 2.81,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 2365,
+    "px": 1486,
+    "median": 16.39,
+    "p10": 3.12,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 2615,
+    "px": 1535,
+    "median": 16.31,
+    "p10": 1.89,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 2864,
+    "px": 1481,
+    "median": 16.03,
+    "p10": 3.26,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 3114,
+    "px": 1508,
+    "median": 14.56,
+    "p10": 2.38,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 3363,
+    "px": 1685,
+    "median": 9.02,
+    "p10": 1.49,
+    "occluded": 0.003,
+    "headOccluded": 0
+   },
+   {
+    "x": 3613,
+    "px": 1566,
+    "median": 12.22,
+    "p10": 1.57,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 3862,
+    "px": 1461,
+    "median": 16.43,
+    "p10": 4.29,
+    "occluded": 0.229,
+    "headOccluded": 0
+   },
+   {
+    "x": 4112,
+    "px": 1506,
+    "median": 13.55,
+    "p10": 2.51,
+    "occluded": 0,
+    "headOccluded": 0
+   },
+   {
+    "x": 4361,
+    "px": 1721,
+    "median": 3.53,
+    "p10": 1.44,
+    "occluded": 0.044,
+    "headOccluded": 0
+   },
+   {
+    "x": 4611,
+    "px": 1657,
+    "median": 11.38,
+    "p10": 1.39,
+    "occluded": 0.117,
+    "headOccluded": 0
+   },
+   {
+    "x": 4860,
+    "px": 1508,
+    "median": 16.43,
+    "p10": 3.13,
+    "occluded": 0,
+    "headOccluded": 0
+   }
+  ],
+  "worstMedian": 3.53,
+  "medianOfMedians": 14.56,
+  "maxOcclusion": 0.229,
+  "maxHeadOcclusion": 0,
+  "heavyOcclusionShare": 0
+ },
+ "phases": {
+  "rush": {
+   "overlapTele": 0.829,
+   "tipAboveHeadPx": 48.7,
+   "tipAboveHeadUnits": 89.1,
+   "centroidShiftPx": 3.3,
+   "teleSeconds": 0.45,
+   "diffs": {
+    "idle_tele": 0.077,
+    "idle_swing": 0.0675,
+    "tele_swing": 0.0663,
+    "swing_post": 0.0429,
+    "idle_post": 0.0653
+   }
+  },
+  "guard": {
+   "overlapTele": 0.833,
+   "tipAboveHeadPx": 40.9,
+   "tipAboveHeadUnits": 74.7,
+   "centroidShiftPx": 3.7,
+   "teleSeconds": 0.45,
+   "diffs": {
+    "idle_tele": 0.0755,
+    "idle_swing": 0.0656,
+    "tele_swing": 0.0645,
+    "swing_post": 0.0405,
+    "idle_post": 0.0632
+   }
+  },
+  "boss": {
+   "overlapTele": 0.761,
+   "tipAboveHeadPx": 84.3,
+   "tipAboveHeadUnits": 154,
+   "centroidShiftPx": 4.8,
+   "teleSeconds": 0.45,
+   "diffs": {
+    "idle_tele": 0.1181,
+    "idle_swing": 0.1032,
+    "tele_swing": 0.1014,
+    "swing_post": 0.0647,
+    "idle_post": 0.1034
+   }
+  }
+ },
+ "bots": {
+  "dumb": {
+   "mode": "dumb",
+   "n": 10,
+   "clearRate": 0,
+   "avgSeconds": 29.4,
+   "avgGotHit": 13,
+   "avgParries": 0,
+   "avgWhiffs": 3.6,
+   "clearedSeconds": [],
+   "avgClearSeconds": null,
+   "avgClearHits": null,
+   "moves": {
+    "quick": 552
+   },
+   "cuts": 0,
+   "deflects": 0,
+   "breaks": 0,
+   "bossShares": [],
+   "deaths": 10
+  },
+  "smart": {
+   "mode": "smart",
+   "n": 10,
+   "clearRate": 1,
+   "avgSeconds": 74.2,
+   "avgGotHit": 7,
+   "avgParries": 21.5,
+   "avgWhiffs": 1.1,
+   "clearedSeconds": [
+    79.6,
+    76.7,
+    73.2,
+    74.5,
+    72,
+    71.7,
+    79.4,
+    70.3,
+    74.1,
+    70.3
+   ],
+   "avgClearSeconds": 74.2,
+   "avgClearHits": 7,
+   "moves": {
+    "quick": 1216
+   },
+   "cuts": 0,
+   "deflects": 0,
+   "breaks": 0,
+   "bossShares": [
+    0.27,
+    0.28,
+    0.28,
+    0.3,
+    0.31,
+    0.24,
+    0.3,
+    0.24,
+    0.25,
+    0.24
+   ],
+   "deaths": 0
+  },
+  "tactical": {
+   "mode": "tactical",
+   "n": 10,
+   "clearRate": 1,
+   "avgSeconds": 68.5,
+   "avgGotHit": 5.4,
+   "avgParries": 18,
+   "avgWhiffs": 3.2,
+   "clearedSeconds": [
+    68.1,
+    70,
+    65.4,
+    68.9,
+    68,
+    69.8,
+    70.9,
+    66.1,
+    71.2,
+    66.9
+   ],
+   "avgClearSeconds": 68.5,
+   "avgClearHits": 5.4,
+   "moves": {
+    "dash": 85,
+    "quick": 1188
+   },
+   "cuts": 43,
+   "deflects": 10,
+   "breaks": 10,
+   "bossShares": [
+    0.24,
+    0.25,
+    0.25,
+    0.26,
+    0.24,
+    0.25,
+    0.23,
+    0.26,
+    0.24,
+    0.26
+   ],
+   "deaths": 0
+  },
+  "gap": 1,
+  "timeRatio": 0.92,
+  "hitRatio": 0.77
+ },
+ "ui": {
+  "screen": "844x390",
+  "safe": {
+   "t": 0,
+   "r": 0,
+   "b": 0,
+   "l": 0
+  },
+  "buttons": [
+   {
+    "key": "left",
+    "label": "◀",
+    "sub": "移動",
+    "x": 46.8,
+    "y": 334,
+    "r": 32.8,
+    "tapSize": 65.5,
+    "insideSafe": true
+   },
+   {
+    "key": "right",
+    "label": "▶",
+    "sub": "",
+    "x": 124.3,
+    "y": 334,
+    "r": 32.8,
+    "tapSize": 65.5,
+    "insideSafe": true
+   },
+   {
+    "key": "attack",
+    "label": "攻擊",
+    "sub": "長按＝重擊",
+    "x": 788,
+    "y": 334,
+    "r": 42,
+    "tapSize": 84,
+    "insideSafe": true
+   },
+   {
+    "key": "parry",
+    "label": "招架",
+    "sub": "",
+    "x": 706.3,
+    "y": 334,
+    "r": 27.7,
+    "tapSize": 55.4,
+    "insideSafe": true
+   },
+   {
+    "key": "jump",
+    "label": "跳",
+    "sub": "",
+    "x": 788,
+    "y": 252.3,
+    "r": 27.7,
+    "tapSize": 55.4,
+    "insideSafe": true
+   }
+  ],
+  "overlaps": [],
+  "hintVisible": false,
+  "hintFontPx": 16,
+  "idleAlpha": 0.32
+ },
+ "staticLight": {
+  "bytesCompared": 107584,
+  "bytesDiffer": 0,
+  "identical": true
+ },
+ "perf": {
+  "n": 201,
+  "median": 16.7,
+  "p95": 18,
+  "p99": 18.4,
+  "max": 18.4,
+  "drawMedian": 0.3,
+  "drawP95": 0.8
+ },
+ "errors": []
+}

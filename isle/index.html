@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>島與船</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1c2c;overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 原型・島（2026-09-16）——跟園子同一套程式，只換了氣氛：
+// 沙灘、會動的海、椰子樹、漂流木、營火。先不加生存壓力（那會變成另一種遊戲）。
+// 玩家只做兩件事：把苗放在空地、把兩個一樣的東西疊起來。其他全部由小人自己做。
+// 目標是三分鐘內讓人感覺到「東西自己在長、自己在被搬」，不需要讀任何說明。
+
+const P = ['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179',
+           '#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'];
+
+// 內部像素解析度**跟著螢幕比例長**，只保證整數倍放大（像素才銳利）。
+// 固定 320×180 的話，844×390 的手機會剩下左右各一百多像素的黑邊——
+// 冷讀者說那「看起來就是沒做好」，他是對的。
+let W = 320, H = 180;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const buf = document.createElement('canvas'); buf.width = W; buf.height = H;
+const g = buf.getContext('2d');
+g.imageSmoothingEnabled = false;
+
+// ---------- 音（程式合成，沒有素材） ----------
+let AC = null;
+function beep(freq, len, type, vol){
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state === 'suspended') AC.resume();
+    const o = AC.createOscillator(), gn = AC.createGain();
+    o.type = type||'square'; o.frequency.value = freq;
+    gn.gain.value = 0; o.connect(gn); gn.connect(AC.destination);
+    const t = AC.currentTime;
+    gn.gain.linearRampToValueAtTime(vol||0.05, t+0.01);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t+(len||0.12));
+    o.start(t); o.stop(t+(len||0.12)+0.02);
+  }catch(e){}
+}
+// ---------- 環境音（程式合成，沒有素材） ----------
+// 海浪＝白噪音過低通，音量用一條慢的正弦起伏（一波大約六秒）；
+// 上面疊一層很輕的和弦，每隔一陣子換一個音。
+// 瀏覽器要有使用者互動過才准出聲，所以第一次點畫面才開。
+let ambient = null;
+function startAmbient(){
+  if(ambient) return;
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state === 'suspended') AC.resume();
+    const len = AC.sampleRate * 3;
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * 0.5;
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+    const gn = AC.createGain(); gn.gain.value = 0.05;
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.17;   // 一波約六秒
+    const lfoG = AC.createGain(); lfoG.gain.value = 0.035;
+    lfo.connect(lfoG); lfoG.connect(gn.gain);
+    src.connect(lp); lp.connect(gn); gn.connect(AC.destination);
+    src.start(); lfo.start();
+    ambient = {src, gn};
+    // 很輕的和弦，每 11 秒換一個音（不是旋律，只是讓空氣不要太乾）
+    const notes = [196.0, 233.1, 261.6, 293.7];
+    let ni = 0;
+    setInterval(()=>{
+      if(document.hidden) return;
+      const o = AC.createOscillator(), g2 = AC.createGain();
+      o.type = 'triangle'; o.frequency.value = notes[ni % notes.length]; ni++;
+      g2.gain.value = 0; o.connect(g2); g2.connect(AC.destination);
+      const t = AC.currentTime;
+      g2.gain.linearRampToValueAtTime(0.012, t+2.0);
+      g2.gain.linearRampToValueAtTime(0.0, t+8.0);
+      o.start(t); o.stop(t+8.2);
+    }, 11000);
+  }catch(e){}
+}
+
+const S = {
+  plant:()=>beep(330,0.09,'square',0.05),
+  merge:()=>{beep(520,0.09,'square',0.06); setTimeout(()=>beep(780,0.12,'square',0.05),60);},
+  pick:()=>beep(660,0.06,'triangle',0.04),
+  drop:()=>beep(220,0.08,'triangle',0.05),
+  no:()=>beep(120,0.1,'sawtooth',0.04),
+  level:()=>{[440,550,660,880].forEach((f,i)=>setTimeout(()=>beep(f,0.16,'square',0.05),i*90));}
+};
+
+let SC = 1, ox = 0, oy = 0;   // 放大倍率與置中黑邊（resize 算，輸入與繪製共用）
+
+// ---------- 場地 ----------
+const COLS = 10, ROWS = 4, TILE = 22;
+let GX = Math.floor((W - COLS*TILE)/2), GY = 50;
+const cells = [];                       // {kind, lv, grow, ready, held}
+for(let i=0;i<COLS*ROWS;i++) cells.push(null);
+const idx = (x,y)=> y*COLS+x;
+const cellAt = (x,y)=> (x<0||y<0||x>=COLS||y>=ROWS) ? undefined : cells[idx(x,y)];
+
+// 三種東西。苗→樹→果園；每一級的產出與成熟時間不同。
+const KIND = {
+// 名字刻意不綁椰子（製作人 2026-09-16：「不要綁什麼椰子之類的，如果換島不一定會有椰子」）。
+// 同一套機制之後可以在別座島長出完全不同的東西，不用改程式。
+  seed:{name:'幼苗', color:5, grow:3.4, yield:1},
+  tree:{name:'小樹', color:6, grow:5.2, yield:3},
+  grove:{name:'樹林', color:6, grow:8.0, yield:8},
+  gold:{name:'老樹', color:7, grow:12.0, yield:18}   // 深青綠：橘紅色在沙灘上看起來像枯樹（我為此誤改了兩次夜色）
+};
+const CHAIN = ['seed','tree','grove','gold'];
+
+let energy = 6, energyMax = 6, energyT = 0;
+let coins = 0, goal = 60, level = 1;
+let msg = '', msgT = 0;
+
+function plant(x,y){
+  if(cellAt(x,y) !== null) { S.no(); return false; }
+  if(energy < 1){ S.no(); say('沒力氣了，等一下'); return false; }
+  energy--;
+  cells[idx(x,y)] = {kind:'seed', lv:0, grow:0, ready:false, pop:0};
+  S.plant();
+  return true;
+}
+function say(t){ msg = t; msgT = 2.2; }
+
+// ---------- 存檔 ----------
+// 製作人 2026-09-16：玩到第 5 級、我重新部署他一重整就全沒了。**原型也要存檔。**
+const SAVE_KEY = 'isle.v1';
+let saveT = 0;
+function save(){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      cells: cells.map(c => c ? {k:c.kind, g:c.grow, r:c.ready} : null),
+      coins, goal, level, energy, energyMax, folk: folk.length, shipped, shipPart, days,
+      t: Date.now(), guards: guards.length, guardCost, hireCost, wave
+    }));
+  }catch(e){}
+}
+function load(){
+  try{
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if(!d) return false;
+    for(let i=0;i<cells.length;i++){
+      const c = d.cells[i];
+      cells[i] = c ? {kind:c.k, lv:0, grow:c.g||0, ready:!!c.r, pop:0} : null;
+    }
+    coins = d.coins|0; goal = d.goal||60; level = d.level||1;
+    energy = d.energy|0; energyMax = d.energyMax||6; shipped = d.shipped|0;
+    shipPart = d.shipPart|0; days = d.days||0;
+    if(d.guardCost) guardCost = d.guardCost;
+    wave = d.wave|0;
+    if(d.hireCost) hireCost = d.hireCost;
+    for(let i=0;i<(d.guards|0);i++) guards.push({x: GX+20+i*26, y: GY+ROWS*TILE+2, swing: 0});
+    // **你不在的時候他們也在做事**（掛機遊戲的基本盤，而製作人的玩法正好是「隔一段時間再打開」）。
+    // 算法保守：離線最多算兩小時、效率打對折——不然關掉一天回來就直接通關，那就不是玩了。
+    if(d.t){
+      const secs = Math.min(2*3600, Math.max(0, (Date.now() - d.t) / 1000));
+      if(secs > 60){
+        const perSec = 0.9 * Math.max(2, d.folk|0) * 0.5;      // 每個島民每秒約 0.9，打對折
+        offline = Math.floor(secs * perSec);
+        coins += offline;
+        offlineSecs = secs;
+      }
+    }
+    while(folk.length < Math.max(2, d.folk|0)) addFolk();
+    return true;
+  }catch(e){ return false; }
+}
+
+// ---------- 小人 ----------
+const folk = [];
+function addFolk(){
+  folk.push({x:GX+COLS*TILE/2, y:GY+ROWS*TILE+6, tx:0, ty:0, target:null, carry:0, state:'idle', t:0, step:0});
+}
+addFolk(); addFolk(); addFolk();  // 開場三個島民：掛機的底線速度要撐得起「放著也會前進」
+
+const barn = {x: GX + COLS*TILE/2, y: GY + ROWS*TILE + 6};
+let shipped = 0;
+
+// ---------- 夜晚與敵人（2026-09-16，製作人要的「會輸的那一面」）----------
+// 參照 Kingdom Two Crowns 的骨架：白天發展、晚上有東西來拆你累積的東西。
+// 我們的版本：天黑 → 海上上岸一批東西 → 往營地走、沿路吃掉經過的樹 →
+// 守衛（花錢雇）會擋住它們。擋不住就損失樹與一部分物資。
+const DAY_LEN = 105.0;       // 一個白天多久（秒）
+const NIGHT_LEN = 15.0;      // 天黑多久
+let clock = 0;               // 0..DAY_LEN+NIGHT_LEN
+let night = false;
+let wave = 0;                // 第幾次天黑
+const foes = [];             // {x, y, t, eat}
+const guards = [];           // {x, y, home, busy, target}
+let guardCost = 60;
+let FOE_MAX = 4, STEAL = 0.12, REACH_G = 26;   // 可調的三顆旋鈕（測試會掃）
+// 守不住的夜：一夜之內營地被摸到就算一次，連續三夜＝他們把你趕下島（輸的結局）
+// 之所以要有這個：不設防的玩家原本不會輸，只是永遠造不完船（量出來 60 分鐘還沒完）。
+// **無限拖不是輸，是無聊**；製作人要的是「拿起來看一眼他們贏了，或是誰滅了」。
+let lost = false;
+let LIMIT_NIGHTS = 12;   // 這座島撐得住幾個夜晚（12 夜 × 120 秒 ≈ 24 分鐘，一趟通勤）
+let invested = 0;   // 花在守衛與雇人上的物資也算資產，否則「買東西」會被誤判成倒退
+const BAD_LIMIT = 3;
+function isNight(){ return night; }
+// 崗位：沿著海岸線平均分布（面海那一側，敵人從那裡上岸）
+function postOf(i){
+  const n = Math.max(1, guards.length);
+  return {x: GX + (COLS*TILE) * (i + 0.5) / n, y: GY + 4};
+}
+
+function hireGuard(){
+  if(coins < guardCost){ S.no(); say('物資不夠'); return; }
+  coins -= guardCost; invested += guardCost; guardCost = Math.floor(guardCost * 1.9);
+  guards.push({x: GX + 20 + guards.length*26, y: GY + ROWS*TILE + 2, swing: 0});
+  S.level(); say('來了一個守衛'); save();
+}
+function startNight(){
+  night = true; wave++;
+  const n = Math.min(FOE_MAX, 1 + Math.floor(wave * 0.35));   // 一開始只有一隻，越晚越多
+  for(let i=0;i<n;i++){
+    foes.push({x: 20 + Math.random()*(W-40), y: GY - 14, t: 0, eaten: 0});
+  }
+  S.no(); say('天黑了　海上有東西上岸');
+}
+function endNight(){
+  night = false; foes.length = 0;
+  // **這座島只撐得住 LIMIT_NIGHTS 個夜晚**。撐到期限船還沒造好＝你留在這裡（輸）。
+  // 為什麼是期限而不是「守不住就輸」：量出來不設防的玩家從來不會輸，
+  // 他只是**永遠造不完**（60 分鐘還在跑、被搶 68000 物資）。那不是輸，是沒有終點。
+  // 製作人的硬約束是「通勤一趟打完一局，20～30 分鐘」——所以局長要由規則保證，
+  // 而不是由玩家打得好不好決定。敵人搶走的物資＝你離期限更近，這才讓守衛變成一個真的選擇。
+  if(wave >= LIMIT_NIGHTS && shipPart < SHIP_PARTS.length){
+    lost = true; ending = 0.01; say('船沒造完　你留在這座島上'); save(); return;
+  }
+  say('天亮了');
+}
+function updNight(dt){
+  clock += dt;
+  if(!night && clock >= DAY_LEN) { clock = 0; startNight(); }
+  else if(night && clock >= NIGHT_LEN) { clock = 0; endNight(); }
+  if(!night) return;
+  for(const f of foes){
+    f.t += dt;
+    // 往營地走，沿路吃掉經過的格子
+    const dx = barn.x - f.x, dy = barn.y - f.y;
+    const d = Math.hypot(dx, dy) || 1;
+    f.x += dx/d * 15 * dt; f.y += dy/d * 15 * dt;
+    const cx = Math.floor((f.x - GX)/TILE), cy = Math.floor((f.y - GY)/TILE);
+    if(cx>=0 && cy>=0 && cx<COLS && cy<ROWS){
+      const c = cellAt(cx, cy);
+      // 吃一棵要多久（1.3 秒）
+      if(c && f.t > 1.3){ cells[idx(cx,cy)] = null; f.eaten++; f.t = 0; S.no(); }
+    }
+    if(Math.hypot(barn.x-f.x, barn.y-f.y) < 10){    // 摸到營地就搶物資
+      const loss = Math.min(coins, Math.floor(coins*STEAL) + 20);  // 搶走的是比例，不是定額（早期不會被打到歸零）
+      coins -= loss; f.x = 20 + Math.random()*(W-40); f.y = GY - 14;
+      say('被搶走 '+loss+' 物資');
+    }
+  }
+  // 守衛**站崗**，不追擊（製作人 2026-09-16：「我現在看起來又有一點像是 RTS」）。
+  // 追著敵人跑就是 RTS 的畫面語言——單位在地圖上移動、交戰。
+  // Kingdom 之所以不像 RTS，正是因為你不能指揮任何人，弓箭手站在牆後自己射。
+  // 這裡照同一條：他們沿著海岸線站定，敵人走進他的範圍才出手。
+  const REACH = REACH_G;
+  for(let i=0;i<guards.length;i++){
+    const g = guards[i];
+    const post = postOf(i);
+    g.x += (post.x - g.x) * dt * 3;                 // 回到自己的崗位
+    g.y += (post.y - g.y) * dt * 3;
+    g.swing = Math.max(0, (g.swing||0) - dt);
+    for(const f of foes){
+      if(Math.hypot(f.x-g.x, f.y-g.y) < REACH){
+        g.swing = 0.25;                              // 出手的動作
+        foes.splice(foes.indexOf(f), 1);
+        S.merge();
+        break;
+      }
+    }
+  }
+}
+// 錢要有地方花（製作人 2026-09-16：「錢沒什麼用」）。兩顆按鈕，兩種都是**當場看得到反應**的：
+// 雇一個幫手（畫面上多一個人在跑）、澆一次水（整片立刻成熟，小人馬上全體出動）。
+let hireCost = 45, waterCost = 25;
+// 造船：三段，每段都看得到船在長大（這是「有頭有尾」的那個尾）
+// **五段，不是三段**（製作人 2026-09-16 玩完：「中間是有點無趣」）。
+// 他不是在乾等——他一直在動——是「做的事都一樣，而下一個目標太遠」。
+// 同一條路切成更多段：每段都有完成感、每段都多一個島民、船都看得出又長大一塊。
+// 總長沒有變（最後一段還是 13000），變的是中間那段路上有沒有東西發生。
+const SHIP_PARTS = [
+  {name:'船底', cost: 900},
+  {name:'肋骨', cost: 2800},
+  {name:'船身', cost: 6200},
+  {name:'桅杆', cost: 12000},
+  {name:'船帆', cost: 21000}
+];
+let shipPart = 0;           // 已完成幾段
+let ending = 0;             // >0＝結局播放中（秒）
+let days = 0;               // 過了幾個晝夜（＝wave，結束畫面與上方細欄共用）
+function buildShip(){
+  if(shipPart >= SHIP_PARTS.length) return;
+  const p = SHIP_PARTS[shipPart];
+  if(coins < p.cost){ S.no(); say('還要 '+(p.cost-coins)+' 物資'); return; }
+  coins -= p.cost; shipPart++;
+  energyMax += 2; energy = energyMax; addFolk();   // 每造好一段：力氣變多、多一個人
+  S.level(); save();
+  if(shipPart >= SHIP_PARTS.length){ ending = 0.01; say('船好了。'); }
+  else say(p.name+'做好了　漂來一個島民　下一步：'+SHIP_PARTS[shipPart].name);
+}
+let BTN = {hire:{x: 6, y: 154, w: 66, h: 20}, water:{x: 78, y: 154, w: 66, h: 20},
+           ship:{x: W-104, y: 154, w: 98, h: 20}};
+function inBtn(b, px, py){ return px>=b.x && px<=b.x+b.w && py>=b.y && py<=b.y+b.h; }
+function hire(){
+  if(coins < hireCost){ S.no(); say('錢不夠'); return; }
+  coins -= hireCost; invested += hireCost; hireCost = Math.floor(hireCost*2.1);
+  addFolk(); S.level(); say('海上又漂來一個人'); save();
+}
+function water(){
+  if(coins < waterCost){ S.no(); say('錢不夠'); return; }
+  let n = 0;
+  for(const c of cells) if(c && !c.ready){ c.grow = KIND[c.kind].grow; c.ready = true; c.pop = 0.4; n++; }
+  if(n === 0){ S.no(); say('沒有東西要澆'); return; }
+  coins -= waterCost; waterCost = Math.max(25, Math.floor(waterCost*1.15));
+  S.merge(); say('全部長大了！　'+n+' 棵'); save();
+}
+// 出貨價：等級越高越划算（金果一顆抵一大筆），這是「到頂之後要做什麼」的出口
+const SHIP = {seed:2, tree:9, grove:34, gold:110};
+function inBarn(px,py){ return Math.abs(px-barn.x) < 18 && Math.abs(py-barn.y) < 16; }
+
+function findReady(){
+  let best = null, bd = 1e9;
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const c = cellAt(x,y);
+    if(!c || !c.ready || c.claimed) continue;
+    const px = GX+x*TILE+TILE/2, py = GY+y*TILE+TILE/2;
+    const d = Math.abs(px-barn.x)+Math.abs(py-barn.y);
+    if(d < bd){ bd = d; best = {x,y,px,py}; }
+  }
+  return best;
+}
+
+function updFolk(f, dt){
+  const spd = 46;   // 走快一點：掛機那條線的速度幾乎全押在他們身上
+  if(f.state === 'idle'){
+    // **島民自己會做全部的事**（製作人 2026-09-16：「這看起來是要做掛機遊戲，
+    // 但是卻需要花很多時間在前置作業，不然賺錢的速度超慢……而這個作業重複性超高」）。
+    // 玩家插手只是**加速**：你想自己種、自己合成當然可以，而且比較快；
+    // 你不動手它也會自己往前跑——那才是掛機。
+    // 優先序：**先收成 → 先把島種滿 → 沒有空地了才合成**。
+    // （第一版是「有兩個一樣的就併」，結果 40 格的島上永遠只有 5 棵東西——
+    //   島民太愛合成，把「看著島慢慢長滿」這件事整個抹掉了。
+    //   合成的意義本來就是「地不夠用了才把小的併成大的」。）
+    // **成長優先於收入**：先把小的併成大的，再去採收。
+    // （反過來的話，島上一直有成熟的小苗可以採，他們就永遠在採產量 1 的東西，
+    //   合成鏈一輩子爬不上去——量出來通關要 105 分鐘，而且最大只長到「林」。）
+    const m = findMerge();
+    if(m){
+      cellAt(m.a.x, m.a.y).claimed = true; cellAt(m.b.x, m.b.y).claimed = true;
+      f.job = {kind:'merge', from:m.a, to:m.b};
+      f.state = 'go'; f.tx = GX+m.a.x*TILE+TILE/2; f.ty = GY+m.a.y*TILE+TILE/2;
+    } else {
+      const t = findReady();
+      if(t){
+        const c = cellAt(t.x, t.y); c.claimed = true;
+        f.job = {kind:'pick', x:t.x, y:t.y};
+        f.state = 'go'; f.tx = t.px; f.ty = t.py;
+      }
+    }
+  }
+  if(f.state === 'go' || f.state === 'back'){
+    const dx = f.tx - f.x, dy = f.ty - f.y;
+    const d = Math.hypot(dx,dy);
+    if(d < 1.5){
+      if(f.state === 'go') _arrive(f);
+      else {
+        if(f.carry){ coins += f.carry; f.carry = 0; S.drop(); }
+        f.state = 'idle'; f.job = null;
+      }
+    } else {
+      f.x += dx/d*spd*dt; f.y += dy/d*spd*dt;
+      f.step += dt*10;
+    }
+  }
+}
+
+function _arrive(f){
+  const j = f.job;
+  if(!j){ f.state = 'idle'; return; }
+  if(j.kind === 'pick'){
+    const c = cellAt(j.x, j.y);
+    if(c && c.ready){
+      f.carry = KIND[c.kind].yield;
+      c.ready = false; c.grow = 0; c.claimed = false; c.pop = 0.35;
+      S.pick();
+    }
+    f.state = 'back'; f.tx = barn.x; f.ty = barn.y;   // 搬回營地才算錢
+    return;
+  }
+  if(j.kind === 'merge'){
+    // 先走到第一格拿起來，再走到第二格併上去
+    if(!f.holding){
+      const a = cellAt(j.from.x, j.from.y);
+      if(a){ f.holding = a.kind; cells[idx(j.from.x, j.from.y)] = null; }
+      f.tx = GX+j.to.x*TILE+TILE/2; f.ty = GY+j.to.y*TILE+TILE/2;
+      f.state = 'go';
+      return;
+    }
+    const b = cellAt(j.to.x, j.to.y);
+    if(b && b.kind === f.holding && CHAIN.indexOf(b.kind) < CHAIN.length-1){
+      const nk = CHAIN[CHAIN.indexOf(b.kind)+1];
+      cells[idx(j.to.x, j.to.y)] = {kind:nk, lv:0, grow:0, ready:false, pop:0.6};
+      S.merge();
+    } else if(b == null){
+      cells[idx(j.to.x, j.to.y)] = {kind:f.holding, lv:0, grow:0, ready:false, pop:0.3};
+    }
+    if(b) b.claimed = false;
+    f.holding = null; f.state = 'idle'; f.job = null;
+    return;
+  }
+  if(j.kind === 'plant'){
+    if(cellAt(j.x, j.y) === null){
+      cells[idx(j.x, j.y)] = {kind:'seed', lv:0, grow:0, ready:false, pop:0.25};
+      S.plant();
+    }
+    f.state = 'idle'; f.job = null;
+    return;
+  }
+  f.state = 'idle'; f.job = null;
+}
+
+// 島上哪一種東西多到該併了。
+// **條件是「同一種有幾個」，不是「有沒有空地」**——
+// 第一版看空地，結果椰苗補得比他們併的還快，空地永遠有，
+// 他們就永遠在採產量 1 的小苗，合成鏈卡死在最低級（島長快反而通關變慢：22 分鐘 → 86 分鐘）。
+const MERGE_WHEN = 3;   // 同一種到幾個就開始併
+function findMerge(){
+  const count = {};
+  for(const c of cells) if(c && !c.claimed) count[c.kind] = (count[c.kind]||0) + 1;
+  for(const k of CHAIN){
+    if(CHAIN.indexOf(k) >= CHAIN.length-1) break;
+    if((count[k]||0) < MERGE_WHEN) continue;
+    const found = [];
+    for(let i=0;i<cells.length;i++){
+      const c = cells[i];
+      if(c && !c.claimed && c.kind === k) found.push({x:i%COLS, y:Math.floor(i/COLS)});
+      if(found.length === 2) return {a:found[0], b:found[1]};
+    }
+  }
+  return null;
+}
+
+function findEmpty(){
+  for(let i=0;i<cells.length;i++) if(cells[i] === null) return {x:i%COLS, y:Math.floor(i/COLS)};
+  return null;
+}
+
+function checkGoal(){}
+
+// **島自己會長**：空地每隔一段時間自己冒出一棵椰苗。
+// （第一版是島民去種，結果他們忙著跑來跑去，40 格的島 30 分鐘只長出 7 棵——
+//   瓶頸根本不在合成，在「誰去種」。一座島本來就會自己長東西，
+//   人只要負責採跟併就好；玩家想加速可以自己點沙灘種。）
+let offline = 0, offlineSecs = 0;   // 離線期間他們做了多少（開場報告用）
+let sprout_t = 0;
+const SPROUT_EVERY = 1.1;   // 幾秒冒一棵（「看著島慢慢長滿」是這個遊戲的賣點，前兩分鐘就要看得出變化）
+function sprout(dt){
+  sprout_t += dt;
+  while(sprout_t >= SPROUT_EVERY){
+    sprout_t -= SPROUT_EVERY;
+    const empty = [];
+    for(let i=0;i<cells.length;i++) if(cells[i] === null) empty.push(i);
+    if(empty.length === 0) return;
+    const i = empty[(Math.random()*empty.length)|0];
+    cells[i] = {kind:'seed', lv:0, grow:0, ready:false, pop:0.25};
+  }
+}
+
+// ---------- 輸入：點空地＝放苗，拖同種＝合成 ----------
+let drag = null;        // {from:{x,y}, px,py, kind, lv}
+let press = null;
+
+function cellFromPoint(px,py){
+  const x = Math.floor((px-GX)/TILE), y = Math.floor((py-GY)/TILE);
+  if(x<0||y<0||x>=COLS||y>=ROWS) return null;
+  return {x,y};
+}
+// 螢幕座標 → 遊戲座標。**畫面是整數倍放大＋置中的**（兩邊有黑邊），
+// 所以要先換成畫布像素、扣掉黑邊、再除以放大倍率——
+// 少扣那個黑邊，點下去的位置就會整個偏掉（製作人 2026-09-16：「點物件的判定怪怪的」）。
+function toBuf(e){
+  const r = cv.getBoundingClientRect();
+  const p = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const dx = (p.clientX - r.left) * (cv.width / r.width);
+  const dy = (p.clientY - r.top) * (cv.height / r.height);
+  return {x: (dx - ox) / SC, y: (dy - oy) / SC};
+}
+function onDown(e){
+  e.preventDefault();
+  startAmbient();
+  if(scene === 'title'){
+    const q = toBuf(e);
+    const bs = window.__TITLE_BTN;
+    if(bs && q.x>=bs.x && q.x<=bs.x+bs.w && q.y>=bs.y && q.y<=bs.y+bs.h) startGame(false);
+    else if(hasSave && q.y > 144) startGame(true);
+    return;
+  }
+  if(ending > 2.0){ localStorage.removeItem(SAVE_KEY); location.reload(); return; }
+  const p = toBuf(e);
+  if(inBtn(BTN.hire, p.x, p.y)){ hire(); return; }
+  if(inBtn(BTN.water, p.x, p.y)){ water(); return; }
+  if(inBtn(BTN.ship, p.x, p.y)){ buildShip(); return; }
+  if(BTN.guard && inBtn(BTN.guard, p.x, p.y)){ hireGuard(); return; }
+  const c = cellFromPoint(p.x,p.y);
+  if(!c) return;
+  const cell = cellAt(c.x,c.y);
+  press = {c, p, moved:false, cell};
+  if(cell){ drag = {from:c, px:p.x, py:p.y, kind:cell.kind}; }
+}
+function onMove(e){
+  if(!press) return;
+  e.preventDefault();
+  const p = toBuf(e);
+  if(Math.hypot(p.x-press.p.x, p.y-press.p.y) > 3) press.moved = true;
+  if(drag){ drag.px = p.x; drag.py = p.y; }
+}
+function onUp(e){
+  if(!press) return;
+  e.preventDefault();
+  const p = toBuf(e);
+  const to = cellFromPoint(p.x,p.y);
+  // 拖到倉庫＝出貨（換錢、空出地）
+  if(drag && press.moved && inBarn(p.x, p.y)){
+    const a = cellAt(drag.from.x, drag.from.y);
+    if(a){
+      const v = SHIP[a.kind] || 1;
+      coins += v; shipped++;
+      cells[idx(drag.from.x, drag.from.y)] = null;
+      S.level(); say('出貨！　＋'+v);
+      checkGoal(); save();
+    }
+    drag = null; press = null; return;
+  }
+  if(drag && press.moved && to && !(to.x===drag.from.x && to.y===drag.from.y)){
+    const a = cellAt(drag.from.x, drag.from.y), b = cellAt(to.x,to.y);
+    if(a && b && a.kind === b.kind && CHAIN.indexOf(a.kind) < CHAIN.length-1){
+      // 合成：兩個一樣的疊起來，變成下一級
+      const nk = CHAIN[CHAIN.indexOf(a.kind)+1];
+      cells[idx(to.x,to.y)] = {kind:nk, lv:0, grow:0, ready:false, pop:0.6};
+      cells[idx(drag.from.x, drag.from.y)] = null;
+      S.merge(); say(KIND[nk].name+'！產量 '+KIND[nk].yield); save();
+    } else if(a && !b){
+      cells[idx(to.x,to.y)] = a; cells[idx(drag.from.x,drag.from.y)] = null; S.plant();
+    } else S.no();
+  } else if(!press.moved && !press.cell){
+    if(plant(press.c.x, press.c.y)) save();
+  }
+  drag = null; press = null;
+}
+cv.addEventListener('mousedown', onDown); cv.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+cv.addEventListener('touchstart', onDown, {passive:false});
+cv.addEventListener('touchmove', onMove, {passive:false});
+cv.addEventListener('touchend', onUp, {passive:false});
+
+// ---------- 畫 ----------
+// 夜間色盤：**每個顏色換成它自己的暗版**，不是在畫面上疊一層色。
+// 疊色會把橘黃沙灘混成土褐、綠樹混成紅褐（試過兩種疊法都不行，自己截圖才看出來）。
+const NIGHT_P = P.map(hex => {
+  const r = parseInt(hex.slice(1,3),16), gg = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  const f = (v, tint) => Math.round(Math.min(255, v * 0.42 + tint));   // 壓暗 + 往藍偏一點
+  const h2 = (v) => v.toString(16).padStart(2,'0');
+  return '#' + h2(f(r, 6)) + h2(f(gg, 10)) + h2(f(b, 34));
+});
+// 半透明的方塊（影子、光暈用）。像素圖本身不透明，透明只用在光影那一層。
+function pxa(x,y,w,h,col,a){ g.globalAlpha = a; g.fillStyle = col; g.fillRect(x|0,y|0,w|0,h|0); g.globalAlpha = 1; }
+
+// 橢圓形的影子（用三條由寬到窄的橫線疊出來，像素風不畫真的橢圓）
+function shadow(cx, cy, w, a){
+  const c = night ? '#0d1220' : '#8a5a20';
+  pxa(cx-w/2+2, cy-2, w-4, 2, c, a*0.55);
+  pxa(cx-w/2, cy, w, 3, c, a);
+  pxa(cx-w/2+1, cy+3, w-2, 2, c, a*0.65);
+  pxa(cx-w/2+4, cy+5, w-8, 1, c, a*0.35);
+}
+
+function px(x,y,w,h,c){ g.fillStyle = (night ? NIGHT_P : P)[c]; g.fillRect(x|0,y|0,w|0,h|0); }
+
+function drawPlant(cx, cy, kind, t, pop){
+  const k = KIND[kind];
+  const c = k.color;
+  const b = 15;                         // 描邊：讓東西從地上跳出來
+  if(kind === 'seed'){
+    px(cx-2, cy+1, 4, 4, b);            // 椰子殼
+    px(cx-1, cy+2, 2, 2, 7);
+    px(cx-5, cy-3, 11, 4, b);           // 兩片葉
+    px(cx-4, cy-2, 4, 2, c); px(cx+1, cy-2, 3, 2, c);
+  } else if(kind === 'tree'){
+    px(cx-1, cy+2, 3, 6, b);            // 細幹（椰子樹是細的）
+    px(cx-1, cy+2, 2, 6, 7);
+    px(cx-8, cy-4, 17, 3, b);           // 葉子往兩邊垂
+    px(cx-7, cy-3, 6, 2, c); px(cx+2, cy-3, 6, 2, c);
+    px(cx-5, cy-7, 11, 4, b); px(cx-4, cy-6, 9, 3, c);
+    px(cx-2, cy-2, 4, 3, b); px(cx-1, cy-1, 2, 2, 4);  // 底下掛著椰子
+  } else if(kind === 'grove'){
+    px(cx-7, cy+1, 3, 6, b); px(cx+3, cy+2, 3, 5, b);
+    px(cx-6, cy+1, 2, 6, 7); px(cx+4, cy+2, 2, 5, 7);
+    px(cx-10, cy-6, 10, 3, b); px(cx-9, cy-5, 8, 2, c);
+    px(cx-1, cy-4, 10, 3, b);  px(cx, cy-3, 8, 2, c);
+    px(cx-8, cy-9, 8, 4, b); px(cx-7, cy-8, 6, 3, c);
+  } else {
+    px(cx-3, cy+1, 6, 7, b); px(cx-2, cy+1, 4, 7, 7);   // 老樹的粗幹
+    px(cx-11, cy-6, 23, 4, b);
+    px(cx-10, cy-5, 9, 2, c); px(cx+2, cy-5, 9, 2, c);
+    px(cx-7, cy-11, 15, 6, b); px(cx-6, cy-10, 13, 4, c);
+    px(cx-6, cy-9, 5, 2, 6);                                  // 受光面
+    px(cx-4, cy-2, 9, 3, b); px(cx-3, cy-1, 3, 2, 4); px(cx+1, cy-1, 3, 2, 4);   // 金色果實
+  }
+  if(t >= 1){                            // 成熟：頭上的果實會晃
+    const w = Math.sin(performance.now()/260)*1.2;
+    px(cx-2+w, cy-13, 4, 4, b);
+    px(cx-1+w, cy-12, 2, 2, 2);
+  }
+}
+
+// 船在右邊的沙灘上，隨著進度長大——玩家要看得到自己在造什麼
+function drawShip(){
+  if(lost) { if(shipPart <= 0) return; }
+  else if(shipPart <= 0 && ending <= 0) return;
+  // 結局：船往右開出畫面（不是升上去）
+  const sail = (ending > 0 && !lost) ? Math.min(1, (ending-1.0)/3.0) : 0;
+  const sx = W - 46 + sail * 120;
+  const sy = GY + ROWS*TILE + 4 - sail * 10;
+  const bob = Math.sin(performance.now()/420) * (1.0 + sail*1.6);
+  const y = sy + bob;
+  if(shipPart >= 1){                                   // ① 船底
+    px(sx-22, y, 44, 3, 15);
+    px(sx-20, y+1, 40, 1, 7);
+  }
+  if(shipPart >= 2){                                   // ② 肋骨：一根根立起來
+    for(let i=0;i<5;i++) px(sx-18+i*9, y-7, 3, 8, 15);
+  }
+  if(shipPart >= 3){                                   // ③ 船身（梯形：底窄上寬）
+    px(sx-24, y-8, 48, 9, 15);
+    px(sx-23, y-7, 46, 7, 7);
+    px(sx-23, y-7, 46, 2, 14);
+    px(sx-18, y+1, 36, 2, 15);
+  }
+  if(shipPart >= 4){                                   // ④ 桅杆
+    px(sx-2, y-34, 3, 27, 15);
+    px(sx-6, y-34, 11, 2, 15);
+  }
+  if(shipPart >= 5){                                   // ⑤ 帆
+    for(let i=0;i<16;i++){                             // 帆：上窄下寬，吃風往前鼓
+      const w = 5 + i*0.9 + Math.sin(performance.now()/500 + i*0.3)*1.2;
+      px(sx+1, y-32+i*1.6, w, 2, 15);
+      px(sx+1, y-32+i*1.6, w-1, 1, 12);
+    }
+    px(sx-3, y-36, 5, 3, 3);                           // 旗
+  }
+  // 開走的時候，島民站在船上
+  if(sail > 0.05){
+    for(let i=0;i<folk.length && i<4;i++){
+      const fx = sx - 14 + i*8;
+      px(fx-2, y-16, 5, 8, 15);
+      px(fx-1, y-15, 3, 6, 10);
+      px(fx-2, y-20, 5, 5, 15);
+      px(fx-1, y-19, 3, 3, 4);
+    }
+  }
+}
+
+function drawFolk(f){
+  shadow(f.x, f.y, 11, 0.42);
+  const bob = Math.abs(Math.sin(f.step))*1.4;
+  const y = f.y - bob;
+  px(f.x-3, y-8, 6, 7, 15);              // 描邊
+  px(f.x-2, y-7, 4, 5, 10);              // 衣服
+  px(f.x-3, y-12, 6, 5, 15);
+  px(f.x-2, y-11, 4, 3, 4);              // 臉
+  px(f.x-4, y-13, 8, 2, 3);              // 帽簷
+  px(f.x-2, y-1, 2, 2, 15); px(f.x+1, y-1, 2, 2, 15);
+  if(f.carry){ px(f.x-3, y-17, 6, 4, 15); px(f.x-2, y-16, 4, 2, 5); }
+  else if(f.holding){ px(f.x-4, y-18, 8, 5, 15); px(f.x-3, y-17, 6, 3, KIND[f.holding].color); }
+}
+
+function frame(dt){
+  if(scene === 'title'){
+    drawTitle();
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = P[0]; ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.drawImage(buf, 0,0,W,H, ox,oy, W*SC, H*SC);
+    ctx.textBaseline = 'top';
+    for(const t of texts){
+      ctx.font = (t.size*SC)+'px ui-monospace, "PingFang TC", monospace';
+      ctx.fillStyle = P[t.c]; ctx.fillText(t.s, ox + t.x*SC, oy + t.y*SC);
+    }
+    texts = [];
+    return;
+  }
+  // 更新
+  energyT += dt;
+  if(energyT > 2.0 && energy < energyMax){ energy++; energyT = 0; }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const c = cellAt(x,y); if(!c) continue;
+    if(c.pop > 0) c.pop = Math.max(0, c.pop - dt*2.2);
+    if(!c.ready){
+      c.grow += dt;
+      if(c.grow >= KIND[c.kind].grow) c.ready = true;
+    }
+  }
+  updNight(dt);
+  if(!night) sprout(dt);   // 天黑的時候島不長東西
+  folk.forEach(f=>updFolk(f, dt));
+  if(msgT > 0) msgT -= dt;
+  days = wave;   // 一天＝一個晝夜循環（原本是每 25 秒一天，跟畫面上的日夜對不起來）
+  if(ending > 0) ending += dt;
+  saveT += dt; if(saveT > 2){ saveT = 0; save(); }
+
+  // 快轉模式（只有測試會開）：規則照跑，畫面不畫。
+  // 沒有人在看的時候還把每一幀畫出來，九成的時間花在畫圖上——一輪測試從 3 分多鐘變成幾秒。
+  if(window.FAST) return;
+
+  // 畫
+  px(0,0,W,H,0);
+  // 海（會動）＋沙灘
+  const t0 = performance.now()/1000;
+  px(0, 16, W, GY-16, 8);                     // 遠海（深）
+  px(0, 16+(GY-16)*0.35, W, (GY-16)*0.65, 9); // 近海
+  // 浪：一段一段的橫線，長度會呼吸。不要一像素高的鋸齒——
+  // 冷讀者說那「像訊號圖或是壞掉的貼圖」。
+  for(let i=0;i<W;i+=26){
+    const a = Math.sin(t0*0.9 + i*0.05);
+    px(i + 3, 30 + a*2, 14 + a*5, 2, 10);
+    px(i + 14, 44 - a*2, 10 + a*4, 2, 10);
+    px(i + 6, GY-14 + a*1.5, 16 + a*4, 2, 11);
+  }
+  // 海面反光：幾條會飄的亮線，讓海不是一塊死的藍
+  for(let i=0;i<W;i+=37){
+    const a = Math.sin(t0*0.6 + i*0.02);
+    pxa(i + 6 + a*8, 22 + (i%3)*6, 10 + a*4, 1, '#73eff7', 0.18);
+  }
+
+  // 岸邊：深→淺，不要一條白線（那看起來像兩張圖沒接好的縫）
+  px(0, GY-9, W, 3, 11);
+  px(0, GY-6, W, 3, 12);
+  px(0, GY-3, W, ROWS*TILE+26, 4);            // 沙
+  // **可以種的地方要有邊界**（製作人 2026-09-16：「寬螢幕上背景整個延伸出去，
+  // 但沒有邊界線我不知道哪裡不能點」）。畫面會跟著螢幕長，但格子永遠只有中間那幾欄。
+  {
+    const fx = GX - 6, fy = GY - 6, fw = COLS*TILE + 12, fh = ROWS*TILE + 12;
+    pxa(fx, fy, fw, fh, night ? '#0d1220' : '#8a5a20', 0.10);      // 區域內略深，像整過的地
+    for(let x=fx; x<fx+fw; x+=8){ px(x, fy, 5, 2, 3); px(x, fy+fh-2, 5, 2, 3); }   // 上下的界
+    for(let y=fy; y<fy+fh; y+=8){ px(fx, y, 2, 5, 3); px(fx+fw-2, y, 2, 5, 3); }   // 左右的界
+    // 界外放幾顆石頭，讓人一眼知道那邊是地形不是空位（**不放看起來可以點的小東西**）
+    for(let i=0;i<4;i++){
+      const rx = fx - 30 - i*26, ry = fy + 18 + ((i*37)%(fh-30));
+      if(rx > 4){ px(rx, ry, 14, 9, 15); px(rx+1, ry+1, 12, 7, 14); px(rx+3, ry+2, 5, 3, 13); }
+      const sx2 = fx + fw + 18 + i*26, sy2 = fy + 12 + ((i*53)%(fh-24));
+      if(sx2 < W-18){ px(sx2, sy2, 12, 8, 15); px(sx2+1, sy2+1, 10, 6, 14); px(sx2+3, sy2+2, 4, 2, 13); }
+    }
+  }
+  // 層次：靠海那一側偏冷、靠近畫面下方偏亮（同一塊沙灘有遠近之分，畫面才不平）
+  pxa(0, GY-3, W, 10, '#3b5dc9', 0.10);
+  pxa(0, GY-3, W, 5, '#3b5dc9', 0.08);
+  const nearY = GY + ROWS*TILE + 10;
+  pxa(0, nearY, W, H-nearY, '#ffcd75', 0.10);
+  px(0, GY-3, W, 2, 3);
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const X = GX+x*TILE, Y = GY+y*TILE;
+    // 沙灘上不畫格線（那是農田才有的東西），只用一點點深淺跟貝殼標出位置
+// 沙灘是一整片，只用零星的貝殼與草點出位置（棋盤格是農田才有的東西）
+    // 只留少數幾個看得出是貝殼的東西。原本那些一像素的白點與紅短橫，
+    // 冷讀者說「分不出是可以點的、是裝飾、還是畫面壞掉」——那就是噪音，拿掉。
+    if((x*7+y*13)%11===0){
+      const bx = X+6+((x*5+y*3)%6), by = Y+9+((x+y*7)%5);
+      px(bx, by, 6, 4, 13); px(bx+1, by-1, 4, 4, 12); px(bx+2, by, 2, 2, 13);
+    }
+    const c = cellAt(x,y);
+    if(c && ending > 0.5) continue;
+    if(c) shadow(X+TILE/2, Y+TILE/2+7, 17, 0.38);   // 船開走了就別再畫島上的東西（製作人 09-16：結局的字被整片樹蓋住）
+    if(c){
+      const t = c.grow / KIND[c.kind].grow;
+      if(!(drag && drag.from.x===x && drag.from.y===y))
+        drawPlant(X+TILE/2, Y+TILE/2+4, c.kind, t, c.pop);
+      if(!c.ready){ // 生長條
+        px(X+3, Y+TILE-4, TILE-6, 2, 8);
+        px(X+3, Y+TILE-4, Math.floor((TILE-6)*Math.min(1,t)), 2, 10);
+      }
+    }
+  }
+  // 倉庫
+  // 營地：漂流木小屋＋一堆火（結局時一起淡掉）
+  if(ending <= 0.5){
+  px(barn.x-15, barn.y-12, 30, 17, 15);
+  px(barn.x-14, barn.y-11, 28, 15, 14);    // 漂流木牆
+  px(barn.x-14, barn.y-7, 28, 1, 15);
+  px(barn.x-16, barn.y-13, 32, 5, 6);      // 棕櫚葉屋頂
+  px(barn.x-16, barn.y-13, 32, 2, 5);
+  px(barn.x-4, barn.y-3, 9, 7, 15);
+  px(barn.x-3, barn.y-2, 7, 6, 0);         // 門
+  const ft = performance.now()/1000;
+  const fh = 5 + Math.sin(ft*7)*2.0;
+  // 營火的光暈：一圈一圈往外淡掉。夜裡是畫面上唯一的暖光源，白天只留一點點
+  {
+    const gl = night ? 0.20 : 0.06;
+    const fx = barn.x + 21, fy = barn.y + 1;
+    const flick = 1 + Math.sin(ft*9)*0.06;
+    for(let r=1;r<=5;r++){
+      const rr = r * 9 * flick;
+      pxa(fx-rr, fy-rr*0.6, rr*2, rr*1.2, '#ef7d57', gl * (1 - r/6));
+    }
+  }
+  px(barn.x+15, barn.y+2, 13, 3, 15);          // 柴堆
+  px(barn.x+16, barn.y+1, 11, 2, 7);
+  px(barn.x+18, barn.y-2-fh, 7, 4+fh, 15);     // 火（描邊）
+  px(barn.x+19, barn.y-1-fh, 5, 3+fh, 2);
+  px(barn.x+20, barn.y-fh*0.7, 3, 4, 3);
+  px(barn.x+21, barn.y+1-fh*0.3, 2, 2, 4);
+  }
+  if(drag) { px(barn.x-16, barn.y-15, 32, 22, 4); px(barn.x-14, barn.y-13, 28, 18, 2); px(barn.x-13, barn.y-12, 26, 4, 3); px(barn.x-5, barn.y-4, 10, 8, 4); }
+
+  // 敵人與守衛
+  for(const f of foes){
+    const w = Math.sin(f.t*6)*1.0;                 // 走路時晃一下
+    px(f.x-8, f.y-14, 16, 15, 15);                 // 描邊
+    px(f.x-7, f.y-13, 14, 13, 1);                  // 身體
+    px(f.x-5, f.y-10+w, 4, 4, 2); px(f.x+2, f.y-10-w, 4, 4, 2);   // 兩顆紅眼睛
+    px(f.x-8, f.y-18, 4, 5, 15); px(f.x+5, f.y-18, 4, 5, 15);     // 兩支角
+    px(f.x-7, f.y-17, 2, 3, 1);  px(f.x+6, f.y-17, 2, 3, 1);
+    px(f.x-6, f.y+1, 4, 3, 15); px(f.x+3, f.y+1, 4, 3, 15);       // 腳
+  }
+  for(const g of guards){
+    shadow(g.x, g.y, 11, 0.42);
+    const sw = (g.swing||0) > 0;
+    px(g.x-4, g.y-10, 9, 11, 15);
+    px(g.x-3, g.y-9, 7, 9, 2);
+    px(g.x-3, g.y-15, 7, 6, 15); px(g.x-2, g.y-14, 5, 4, 4);
+    px(g.x-4, g.y-16, 9, 2, 3);                    // 帽子
+    if(sw){ px(g.x+4, g.y-12, 12, 3, 15); px(g.x+5, g.y-11, 10, 1, 13); }   // 出手：矛橫著揮
+    else  { px(g.x+4, g.y-18, 3, 17, 15); px(g.x+5, g.y-17, 1, 15, 13); }   // 站崗：矛直立
+  }
+  drawShip();
+  if(ending <= 0.5) folk.forEach(drawFolk);
+
+  if(drag){
+    const c = cellAt(drag.from.x, drag.from.y);
+    if(c) drawPlant(drag.px, drag.py-4, c.kind, 0, 0.4);
+  }
+
+  // 結局：船開走，畫面壓暗，寫幾行字
+  if(ending > 0){
+    const a = Math.min(0.86, ending/2.2);
+    g.globalAlpha = a; px(0,0,W,H,0); g.globalAlpha = 1;
+    if(ending > 1.6){
+      const mid = (t, size) => W/2 - t.length * size * 0.5;  // 中文一個字大約就是字級寬
+      const l1 = lost ? '船沒造完　你留在這座島上' : '你離開了這座島';
+      const l2 = '撐了 '+Math.floor(days)+' 天　島民 '+folk.length+' 人';
+      const l3 = lost ? ('船造到第 '+shipPart+'／'+SHIP_PARTS.length+' 段　守衛 '+guards.length+' 人')
+                      : ('出貨 '+shipped+' 次　物資 '+coins);
+      const l4 = '點一下再來一次';
+      txt(mid(l1,10), 52, l1, 4, 10);
+      txt(mid(l2,8), 78, l2, 12);
+      txt(mid(l3,8), 92, l3, 12);
+      txt(mid(l4,8), 118, l4, 13);
+    }
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = P[0]; ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.drawImage(buf, 0,0,W,H, ox,oy, W*SC, H*SC);
+    ctx.textBaseline = 'top';
+    for(const t of texts){
+      ctx.font = (t.size*SC)+'px ui-monospace, "PingFang TC", monospace';
+      ctx.fillStyle = P[t.c];
+      ctx.fillText(t.s, ox + t.x*SC, oy + t.y*SC);
+    }
+    texts = [];
+    return;
+  }
+
+  // 兩顆按鈕（錢的出口）
+  // **買不起的按鈕不要出現**（冷讀者：「開場就是三個灰的東西，有點洩氣，
+  // 我不確定它們是暫時不能按還是壞的」）。有能力做的時候它才長出來。
+  for(const [k, b] of Object.entries(BTN)){
+    let label, cost;
+    if(k === 'guard'){ label = '守衛 '; cost = guardCost; }
+    else if(k === 'hire'){ label = '找人 '; cost = hireCost; }
+    else if(k === 'water'){
+      label = '全部長大 '; cost = waterCost;
+      if(!cells.some(c => c && !c.ready)) continue;   // 沒有東西在長就不出現
+    } else {
+      if(shipPart >= SHIP_PARTS.length){ continue; }
+      label = '造' + SHIP_PARTS[shipPart].name + ' '; cost = SHIP_PARTS[shipPart].cost;
+    }
+    const can = coins >= cost;
+    if(coins < cost * 0.5) continue;                  // 差太遠就先不出現
+    px(b.x, b.y, b.w, b.h, 15);
+    px(b.x+1, b.y+1, b.w-2, b.h-2, can ? (k==='ship' ? 2 : 1) : 8);
+    txt(b.x+7, b.y+6, label + cost, can ? 4 : 14);
+  }
+
+  // 暗角：四邊壓暗一點，視線自然集中在中間（這是「看起來精緻」最便宜的一招）
+  {
+    const v = night ? 0.55 : 0.34;
+    for(let i=0;i<14;i++){
+      const a = v * (1 - i/14) * 0.30;
+      pxa(0, i*2, W, 2, '#1a1c2c', a);
+      pxa(0, H-4-i*2, W, 2, '#1a1c2c', a);
+      pxa(i*3, 0, 3, H, '#1a1c2c', a);
+      pxa(W-3-i*3, 0, 3, H, '#1a1c2c', a);
+    }
+  }
+
+  pxa(0, 0, W, H, night ? '#2a3a6a' : '#ff9d3a', night ? 0.10 : 0.07);  // 整體色調
+
+  // 上方細欄
+  px(0,0,W,16,1);
+  txt(4, 4, '物資 '+coins, 4);
+  txt(W-104, 4, (night ? '夜' : '日') + ' ' + Math.min(wave+ (night?0:1), LIMIT_NIGHTS) + '/' + LIMIT_NIGHTS, night ? 3 : 12);
+  // 六個方格被三個冷讀者問過「那是時間、血量還是資源」→ 直接寫出它是什麼、扣在哪
+  txt(W-88, 4, '種樹 '+energy, 12);
+  for(let i=0;i<energyMax;i++) px(W-34+i*5, 5, 4, 6, i<energy?11:8);
+  // 不要在同一排出現兩個一樣的數字（冷讀者：「物資 95」跟「船底 95/900」我分不出是不是同一個）
+txt(W/2-76, 4, shipPart >= SHIP_PARTS.length ? '船好了　點右下角上船'
+     : ('下一步：' + SHIP_PARTS[shipPart].name + '　還差 ' + Math.max(0, SHIP_PARTS[shipPart].cost - coins)), 12);
+  if(msgT > 0){ txt(W/2 - msg.length*4, H-11, msg, 4); }
+  // 引導：**一次只講一句**，而且講的是你現在該做的那一件事
+  // （冷讀者：「它是我唯一知道能做什麼的線索，卻長得最不起眼」）。
+  const planted = cells.filter(Boolean).length;
+  let tip = '';
+  if(planted === 0) tip = '點沙灘種一棵樹';
+  else if(planted === 1) tip = '再種一棵　兩棵一樣的可以疊起來';
+  else if(!cells.some(c => c && c.kind !== 'seed') && shipped === 0) tip = '把一棵拖到另一棵上面';
+  if(tip !== ''){
+    // 不要做成「畫面上最像按鈕的東西」——第二個冷讀者說他第一個衝動是去點那行字。
+    // 也不要用黑底白字，那看起來像系統訊息、不像遊戲的一部分。
+    // 所以：沒有框，用沙灘同色系的深字，靠一圈淺色描邊讓它在亮沙上看得見。
+    const tw = tip.length * 12;
+    for(const d of [[-1,0],[1,0],[0,-1],[0,1]]) txt(W/2 - tw/2 + d[0], GY + 14 + d[1], tip, 4, 12);
+    txt(W/2 - tw/2, GY + 14, tip, 1, 12);
+  }
+
+  // 整數倍放大（非整數倍會讓像素糊掉），置中，多出來的邊留黑
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = P[0];
+  ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.drawImage(buf, 0,0,W,H, ox,oy, W*SC, H*SC);
+  ctx.textBaseline = 'top';
+  for(const t of texts){
+    ctx.font = (t.size*SC)+'px ui-monospace, "PingFang TC", monospace';
+    ctx.fillStyle = P[t.c];
+    ctx.fillText(t.s, ox + t.x*SC, oy + t.y*SC);
+  }
+  texts = [];
+}
+
+// 字**不畫在像素緩衝上**：那張圖會被整數倍放大，字跟著放大就變馬賽克
+// （製作人 2026-09-16：「字體很模糊，像素變成馬賽克了」）。
+// 所以先排隊，最後直接畫在最終畫布上，用真正的螢幕像素。
+let texts = [];
+function txt(x,y,s,c,size){ texts.push({x,y,s,c,size:size||8}); }
+
+function resize(){
+  const r = document.body.getBoundingClientRect();
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = Math.floor(r.width*dpr); cv.height = Math.floor(r.height*dpr);
+  cv.style.width = r.width+'px'; cv.style.height = r.height+'px';
+  // 先用基準尺寸算出整數倍，再讓畫面「長到」剛好填滿螢幕
+  SC = Math.max(1, Math.floor(Math.min(cv.width/320, cv.height/180)));
+  W = Math.floor(cv.width / SC);
+  H = Math.floor(cv.height / SC);
+  buf.width = W; buf.height = H;
+  g.imageSmoothingEnabled = false;
+  ox = Math.floor((cv.width - W*SC)/2);
+  oy = Math.floor((cv.height - H*SC)/2);
+  relayout();
+}
+
+// 版面跟著新的 W/H 重算（格子置中、營地在下面、按鈕貼邊）
+function relayout(){
+  GX = Math.floor((W - COLS*TILE)/2);
+  GY = Math.max(40, Math.floor(H*0.30));
+  barn.x = GX + COLS*TILE/2;
+  barn.y = GY + ROWS*TILE + 6;
+  BTN.hire  = {x: 6, y: H-26, w: 66, h: 20};
+  BTN.water = {x: 78, y: H-26, w: 86, h: 20};
+  BTN.ship  = {x: W-104, y: H-26, w: 98, h: 20};
+  BTN.guard = {x: 170, y: H-26, w: 78, h: 20};
+}
+window.addEventListener('resize', resize); resize();
+
+// ---------- 標題畫面 ----------
+// 名字先放一個代號，等製作人挑（他挑過封面，這種東西他一眼就有答案）。
+const TITLE = window.__TITLE || '島與船';
+let scene = 'title';            // title / play
+let hasSave = false;
+function startGame(fresh){
+  if(fresh){ localStorage.removeItem(SAVE_KEY); location.reload(); return; }
+  scene = 'play';
+}
+function drawTitle(){
+  px(0,0,W,H,8);
+  const t0 = performance.now()/1000;
+  px(0, 0, W, 64, 8);
+  for(let i=0;i<W;i+=64){
+    const a = Math.sin(t0*0.7 + i*0.03);
+    px(i + 8, 34 + a*3, 30 + a*10, 2, 9);
+    px(i + 40, 46 - a*3, 22 + a*8, 2, 10);
+  }
+  // 岸邊做成一層一層（深藍 → 淺藍 → 白沫 → 沙），不要一條白線
+  px(0, 62, W, 4, 10);
+  px(0, 66, W, 3, 11);
+  px(0, 69, W, 2, 12);
+  px(0, 71, W, H-71, 4);                       // 沙
+  // 一棵椰子樹與一艘小船當招牌
+  // 招牌的樹。第一版被冷讀者說「以為是曬衣架或路標」——
+  // 問題是葉子畫成兩根水平橫桿。椰子樹的葉子是**從頂端往下垂的弧**。
+  const tx = 74, ty = 118;
+  px(tx-3, ty-40, 7, 40, 15); px(tx-2, ty-40, 5, 40, 7);      // 樹幹（微彎）
+  // 六片葉子：從樹頂放射出去，越往末端越往下垂（那是椰子樹的辨識點）
+  const LEAF = [[-1,-0.55],[-1,-0.05],[-1,0.35],[1,-0.55],[1,-0.05],[1,0.35]];
+  for(const [sx, lift] of LEAF){
+    for(let i=0;i<10;i++){
+      const dx = sx * i * 3.4;
+      const dy = -44 + lift*i*2.2 + i*i*0.16;     // 先往外、再往下垂
+      px(tx + dx - 3, ty + dy, 7, 5, 15);
+      px(tx + dx - 2, ty + dy + 1, 5, 3, 6);
+    }
+  }
+  px(tx-8, ty-34, 6, 5, 15); px(tx-7, ty-33, 4, 3, 4);         // 椰子
+  px(tx+3, ty-32, 6, 5, 15); px(tx+4, ty-31, 4, 3, 4);
+  // 招牌的船：**要有船身**，第一版只有一片帆，冷讀者說「像一片斜著插在沙灘上的紙」
+  const bob = Math.sin(t0*1.4)*1.2;
+  const bx0 = W - 120;
+  px(bx0-26, 104+bob, 54, 10, 15);  px(bx0-25, 105+bob, 52, 8, 7);   // 船身
+  px(bx0-25, 105+bob, 52, 2, 14);
+  px(bx0-19, 114+bob, 40, 3, 15);                                     // 船底
+  px(bx0-2, 68+bob, 4, 38, 15); px(bx0-1, 68+bob, 2, 38, 14);         // 桅杆
+  for(let i=0;i<15;i++){ const w = 3 + i*2.0;
+    px(bx0+2, 70+i*2.3+bob, w, 3, 15); px(bx0+2, 70+i*2.3+bob, w-1, 2, 12); }
+  px(bx0-6, 64+bob, 7, 4, 3);                                          // 旗
+  const tw = TITLE.length * 20;
+  txt(W/2 - tw/2, 14, TITLE, 12, 20);
+  txt(W/2 - 52, 42, '一座島　一艘船　二十分鐘', 12);
+  const bs = {x: W/2-44, y: 120, w: 88, h: 22};
+  px(bs.x, bs.y, bs.w, bs.h, 15); px(bs.x+1, bs.y+1, bs.w-2, bs.h-2, 6);
+  txt(bs.x + 24, bs.y + 7, hasSave ? '繼續' : '開始', 12, 10);
+  if(hasSave) txt(W/2-34, 150, '（點這裡重新開始）', 14);
+  if(offline > 0){
+    const h = Math.floor(offlineSecs/3600), m = Math.floor((offlineSecs%3600)/60);
+    const line = '你不在的這 ' + (h>0 ? h+' 小時 ' : '') + m + ' 分鐘，他們做了 ' + offline + ' 物資';
+    txt(W/2 - line.length*4, 96, line, 4);
+  }
+  window.__TITLE_BTN = bs;
+}
+
+hasSave = load();     // 開場讀一次存檔（標題畫面才知道要顯示「開始」還是「繼續」）
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  frame(dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

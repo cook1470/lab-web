@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>neon — 義體近戰原型</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+  :root{ --sa-t: env(safe-area-inset-top, 0px); --sa-r: env(safe-area-inset-right, 0px);
+         --sa-b: env(safe-area-inset-bottom, 0px); --sa-l: env(safe-area-inset-left, 0px); }
+  #safe{position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;
+        padding-top:var(--sa-t);padding-right:var(--sa-r);padding-bottom:var(--sa-b);padding-left:var(--sa-l);}
+  html,body{margin:0;padding:0;height:100%;background:#05070d;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none;}
+  canvas{display:block;width:100%;height:100%;}
+  #start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:18px;background:#05070d;color:#dff3ff;z-index:9;
+    font-family:-apple-system,"Noto Sans TC",sans-serif;}
+  #start .t{font-size:30px;letter-spacing:.35em;color:#5ff0ff;text-shadow:0 0 18px #1b8fa8;}
+  #start .s{font-size:15px;opacity:.72;letter-spacing:.1em;}
+  #start .k{font-size:12px;opacity:.45;letter-spacing:.06em;line-height:1.7;text-align:center;}
+  #start.gone{display:none;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="safe"></div>
+<div id="start">
+  <div class="t">霓　虹　街</div>
+  <div class="s">點擊開始</div>
+  <div class="k">手機：左下角方向鍵移動　右下角「攻擊」<br>
+    長按攻擊＝重擊　往前滑＝突進斬　「招架」擋下他的攻擊　「跳」跳過坑<br>
+    鍵盤：A／D 移動　J 攻擊（長按＝重擊）　L 突進斬　K 招架　空白 跳</div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

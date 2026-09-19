@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>原型・園子</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1c2c;overflow:hidden;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 原型・園子（2026-09-16）
+// 玩家只做兩件事：把苗放在空地、把兩個一樣的東西疊起來。其他全部由小人自己做。
+// 目標是三分鐘內讓人感覺到「東西自己在長、自己在被搬」，不需要讀任何說明。
+
+const P = ['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179',
+           '#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'];
+
+const W = 320, H = 180;                 // 內部像素解析度（16:9），整數倍放大
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const buf = document.createElement('canvas'); buf.width = W; buf.height = H;
+const g = buf.getContext('2d');
+g.imageSmoothingEnabled = false;
+
+// ---------- 音（程式合成，沒有素材） ----------
+let AC = null;
+function beep(freq, len, type, vol){
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state === 'suspended') AC.resume();
+    const o = AC.createOscillator(), gn = AC.createGain();
+    o.type = type||'square'; o.frequency.value = freq;
+    gn.gain.value = 0; o.connect(gn); gn.connect(AC.destination);
+    const t = AC.currentTime;
+    gn.gain.linearRampToValueAtTime(vol||0.05, t+0.01);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t+(len||0.12));
+    o.start(t); o.stop(t+(len||0.12)+0.02);
+  }catch(e){}
+}
+const S = {
+  plant:()=>beep(330,0.09,'square',0.05),
+  merge:()=>{beep(520,0.09,'square',0.06); setTimeout(()=>beep(780,0.12,'square',0.05),60);},
+  pick:()=>beep(660,0.06,'triangle',0.04),
+  drop:()=>beep(220,0.08,'triangle',0.05),
+  no:()=>beep(120,0.1,'sawtooth',0.04),
+  level:()=>{[440,550,660,880].forEach((f,i)=>setTimeout(()=>beep(f,0.16,'square',0.05),i*90));}
+};
+
+let SC = 1, ox = 0, oy = 0;   // 放大倍率與置中黑邊（resize 算，輸入與繪製共用）
+
+// ---------- 場地 ----------
+const COLS = 9, ROWS = 4, TILE = 24;
+const GX = Math.floor((W - COLS*TILE)/2), GY = 26;
+const cells = [];                       // {kind, lv, grow, ready, held}
+for(let i=0;i<COLS*ROWS;i++) cells.push(null);
+const idx = (x,y)=> y*COLS+x;
+const cellAt = (x,y)=> (x<0||y<0||x>=COLS||y>=ROWS) ? undefined : cells[idx(x,y)];
+
+// 三種東西。苗→樹→果園；每一級的產出與成熟時間不同。
+const KIND = {
+  seed:{name:'苗', color:5, grow:3.2, yield:1},
+  tree:{name:'樹', color:6, grow:4.6, yield:3},
+  grove:{name:'果園', color:3, grow:6.0, yield:9},
+  gold:{name:'金果', color:4, grow:8.0, yield:24}
+};
+const CHAIN = ['seed','tree','grove','gold'];
+
+let energy = 6, energyMax = 6, energyT = 0;
+let coins = 0, goal = 60, level = 1;
+let msg = '', msgT = 0;
+
+function plant(x,y){
+  if(cellAt(x,y) !== null) { S.no(); return false; }
+  if(energy < 1){ S.no(); say('沒力氣了，等一下'); return false; }
+  energy--;
+  cells[idx(x,y)] = {kind:'seed', lv:0, grow:0, ready:false, pop:0};
+  S.plant();
+  return true;
+}
+function say(t){ msg = t; msgT = 2.2; }
+
+// ---------- 存檔 ----------
+// 製作人 2026-09-16：玩到第 5 級、我重新部署他一重整就全沒了。**原型也要存檔。**
+const SAVE_KEY = 'garden.v1';
+let saveT = 0;
+function save(){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      cells: cells.map(c => c ? {k:c.kind, g:c.grow, r:c.ready} : null),
+      coins, goal, level, energy, energyMax, folk: folk.length, shipped
+    }));
+  }catch(e){}
+}
+function load(){
+  try{
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if(!d) return false;
+    for(let i=0;i<cells.length;i++){
+      const c = d.cells[i];
+      cells[i] = c ? {kind:c.k, lv:0, grow:c.g||0, ready:!!c.r, pop:0} : null;
+    }
+    coins = d.coins|0; goal = d.goal||60; level = d.level||1;
+    energy = d.energy|0; energyMax = d.energyMax||6; shipped = d.shipped|0;
+    while(folk.length < Math.max(2, d.folk|0)) addFolk();
+    return true;
+  }catch(e){ return false; }
+}
+
+// ---------- 小人 ----------
+const folk = [];
+function addFolk(){
+  folk.push({x:GX+COLS*TILE/2, y:GY+ROWS*TILE+14, tx:0, ty:0, target:null, carry:0, state:'idle', t:0, step:0});
+}
+addFolk(); addFolk();
+
+const barn = {x: GX + COLS*TILE/2, y: GY + ROWS*TILE + 14};
+let shipped = 0;
+// 錢要有地方花（製作人 2026-09-16：「錢沒什麼用」）。兩顆按鈕，兩種都是**當場看得到反應**的：
+// 雇一個幫手（畫面上多一個人在跑）、澆一次水（整片立刻成熟，小人馬上全體出動）。
+let hireCost = 45, waterCost = 25;
+const BTN = {hire:{x: 8, y: 152, w: 74, h: 20}, water:{x: W-82, y: 152, w: 74, h: 20}};
+function inBtn(b, px, py){ return px>=b.x && px<=b.x+b.w && py>=b.y && py<=b.y+b.h; }
+function hire(){
+  if(coins < hireCost){ S.no(); say('錢不夠'); return; }
+  coins -= hireCost; hireCost = Math.floor(hireCost*2.1);
+  addFolk(); S.level(); say('來了一個幫手'); save();
+}
+function water(){
+  if(coins < waterCost){ S.no(); say('錢不夠'); return; }
+  let n = 0;
+  for(const c of cells) if(c && !c.ready){ c.grow = KIND[c.kind].grow; c.ready = true; c.pop = 0.4; n++; }
+  if(n === 0){ S.no(); say('沒有東西要澆'); return; }
+  coins -= waterCost; waterCost = Math.max(25, Math.floor(waterCost*1.15));
+  S.merge(); say('澆水！　'+n+' 個一起熟了'); save();
+}
+// 出貨價：等級越高越划算（金果一顆抵一大筆），這是「到頂之後要做什麼」的出口
+const SHIP = {seed:2, tree:8, grove:30, gold:120};
+function inBarn(px,py){ return Math.abs(px-barn.x) < 18 && Math.abs(py-barn.y) < 16; }
+
+function findReady(){
+  let best = null, bd = 1e9;
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const c = cellAt(x,y);
+    if(!c || !c.ready || c.claimed) continue;
+    const px = GX+x*TILE+TILE/2, py = GY+y*TILE+TILE/2;
+    const d = Math.abs(px-barn.x)+Math.abs(py-barn.y);
+    if(d < bd){ bd = d; best = {x,y,px,py}; }
+  }
+  return best;
+}
+
+function updFolk(f, dt){
+  const spd = 34;
+  if(f.state === 'idle'){
+    const t = findReady();
+    if(t){
+      const c = cellAt(t.x,t.y); c.claimed = true;
+      f.target = t; f.state = 'go'; f.tx = t.px; f.ty = t.py;
+    }
+  }
+  if(f.state === 'go' || f.state === 'back'){
+    const dx = f.tx - f.x, dy = f.ty - f.y;
+    const d = Math.hypot(dx,dy);
+    if(d < 1.5){
+      if(f.state === 'go'){
+        const c = cellAt(f.target.x, f.target.y);
+        if(c && c.ready){
+          f.carry = KIND[c.kind].yield;
+          c.ready = false; c.grow = 0; c.claimed = false; c.pop = 0.35;
+          S.pick();
+        }
+        f.state = 'back'; f.tx = barn.x; f.ty = barn.y;
+      } else {
+        if(f.carry){ coins += f.carry; f.carry = 0; S.drop(); checkGoal(); }
+        f.state = 'idle'; f.target = null;
+      }
+    } else {
+      f.x += dx/d*spd*dt; f.y += dy/d*spd*dt;
+      f.step += dt*10;
+    }
+  }
+}
+
+function checkGoal(){
+  if(coins >= goal){
+    level++; goal = Math.floor(goal*2.4);
+    energyMax += 2; energy = energyMax;
+    if(level % 2 === 0) addFolk();
+    S.level();
+    say('小鎮長大了！　幫手 '+folk.length+' 人');
+  }
+}
+
+// ---------- 輸入：點空地＝放苗，拖同種＝合成 ----------
+let drag = null;        // {from:{x,y}, px,py, kind, lv}
+let press = null;
+
+function cellFromPoint(px,py){
+  const x = Math.floor((px-GX)/TILE), y = Math.floor((py-GY)/TILE);
+  if(x<0||y<0||x>=COLS||y>=ROWS) return null;
+  return {x,y};
+}
+// 螢幕座標 → 遊戲座標。**畫面是整數倍放大＋置中的**（兩邊有黑邊），
+// 所以要先換成畫布像素、扣掉黑邊、再除以放大倍率——
+// 少扣那個黑邊，點下去的位置就會整個偏掉（製作人 2026-09-16：「點物件的判定怪怪的」）。
+function toBuf(e){
+  const r = cv.getBoundingClientRect();
+  const p = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const dx = (p.clientX - r.left) * (cv.width / r.width);
+  const dy = (p.clientY - r.top) * (cv.height / r.height);
+  return {x: (dx - ox) / SC, y: (dy - oy) / SC};
+}
+function onDown(e){
+  e.preventDefault();
+  const p = toBuf(e);
+  if(inBtn(BTN.hire, p.x, p.y)){ hire(); return; }
+  if(inBtn(BTN.water, p.x, p.y)){ water(); return; }
+  const c = cellFromPoint(p.x,p.y);
+  if(!c) return;
+  const cell = cellAt(c.x,c.y);
+  press = {c, p, moved:false, cell};
+  if(cell){ drag = {from:c, px:p.x, py:p.y, kind:cell.kind}; }
+}
+function onMove(e){
+  if(!press) return;
+  e.preventDefault();
+  const p = toBuf(e);
+  if(Math.hypot(p.x-press.p.x, p.y-press.p.y) > 3) press.moved = true;
+  if(drag){ drag.px = p.x; drag.py = p.y; }
+}
+function onUp(e){
+  if(!press) return;
+  e.preventDefault();
+  const p = toBuf(e);
+  const to = cellFromPoint(p.x,p.y);
+  // 拖到倉庫＝出貨（換錢、空出地）
+  if(drag && press.moved && inBarn(p.x, p.y)){
+    const a = cellAt(drag.from.x, drag.from.y);
+    if(a){
+      const v = SHIP[a.kind] || 1;
+      coins += v; shipped++;
+      cells[idx(drag.from.x, drag.from.y)] = null;
+      S.level(); say('出貨！　＋'+v);
+      checkGoal(); save();
+    }
+    drag = null; press = null; return;
+  }
+  if(drag && press.moved && to && !(to.x===drag.from.x && to.y===drag.from.y)){
+    const a = cellAt(drag.from.x, drag.from.y), b = cellAt(to.x,to.y);
+    if(a && b && a.kind === b.kind && CHAIN.indexOf(a.kind) < CHAIN.length-1){
+      // 合成：兩個一樣的疊起來，變成下一級
+      const nk = CHAIN[CHAIN.indexOf(a.kind)+1];
+      cells[idx(to.x,to.y)] = {kind:nk, lv:0, grow:0, ready:false, pop:0.6};
+      cells[idx(drag.from.x, drag.from.y)] = null;
+      S.merge(); say(KIND[nk].name+'！產量 '+KIND[nk].yield); save();
+    } else if(a && !b){
+      cells[idx(to.x,to.y)] = a; cells[idx(drag.from.x,drag.from.y)] = null; S.plant();
+    } else S.no();
+  } else if(!press.moved && !press.cell){
+    if(plant(press.c.x, press.c.y)) save();
+  }
+  drag = null; press = null;
+}
+cv.addEventListener('mousedown', onDown); cv.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+cv.addEventListener('touchstart', onDown, {passive:false});
+cv.addEventListener('touchmove', onMove, {passive:false});
+cv.addEventListener('touchend', onUp, {passive:false});
+
+// ---------- 畫 ----------
+function px(x,y,w,h,c){ g.fillStyle = P[c]; g.fillRect(x|0,y|0,w|0,h|0); }
+
+function drawPlant(cx, cy, kind, t, pop){
+  const k = KIND[kind];
+  const c = k.color;
+  const b = 15;                         // 描邊：讓東西從地上跳出來
+  if(kind === 'seed'){
+    px(cx-1, cy+1, 3, 5, b);            // 莖
+    px(cx-4, cy-3, 9, 5, b);            // 葉（描邊）
+    px(cx-3, cy-2, 7, 3, c);
+  } else if(kind === 'tree'){
+    px(cx-2, cy+1, 4, 6, b);
+    px(cx-1, cy+1, 2, 6, 7);
+    px(cx-6, cy-8, 13, 10, b);
+    px(cx-5, cy-7, 11, 8, c);
+    px(cx-3, cy-6, 4, 3, 5);            // 受光面
+  } else if(kind === 'grove'){
+    px(cx-8, cy-7, 8, 10, b); px(cx-7, cy-6, 6, 8, 6);
+    px(cx-1, cy-9, 9, 12, b); px(cx,  cy-8, 7, 10, c);
+    px(cx-2, cy+2, 3, 5, b);
+  } else {
+    px(cx-8, cy-9, 16, 13, b);
+    px(cx-7, cy-8, 14, 11, c);
+    px(cx-4, cy-6, 5, 4, 12);
+    px(cx-2, cy+3, 4, 5, b);
+  }
+  if(t >= 1){                            // 成熟：頭上的果實會晃
+    const w = Math.sin(performance.now()/260)*1.2;
+    px(cx-2+w, cy-13, 4, 4, b);
+    px(cx-1+w, cy-12, 2, 2, 2);
+  }
+}
+
+function drawFolk(f){
+  const bob = Math.abs(Math.sin(f.step))*1.4;
+  const y = f.y - bob;
+  px(f.x-3, y-8, 6, 7, 15);              // 描邊
+  px(f.x-2, y-7, 4, 5, 10);              // 衣服
+  px(f.x-3, y-12, 6, 5, 15);
+  px(f.x-2, y-11, 4, 3, 4);              // 臉
+  px(f.x-4, y-13, 8, 2, 3);              // 帽簷
+  px(f.x-2, y-1, 2, 2, 15); px(f.x+1, y-1, 2, 2, 15);
+  if(f.carry){ px(f.x-3, y-17, 6, 4, 15); px(f.x-2, y-16, 4, 2, 5); }
+}
+
+function frame(dt){
+  // 更新
+  energyT += dt;
+  if(energyT > 2.0 && energy < energyMax){ energy++; energyT = 0; }
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const c = cellAt(x,y); if(!c) continue;
+    if(c.pop > 0) c.pop = Math.max(0, c.pop - dt*2.2);
+    if(!c.ready){
+      c.grow += dt;
+      if(c.grow >= KIND[c.kind].grow) c.ready = true;
+    }
+  }
+  folk.forEach(f=>updFolk(f, dt));
+  if(msgT > 0) msgT -= dt;
+  saveT += dt; if(saveT > 2){ saveT = 0; save(); }
+
+  // 畫
+  px(0,0,W,H,0);
+  px(0, GY-7, W, ROWS*TILE+14, 14);          // 田地整塊
+  px(0, GY-7, W, 1, 15); px(0, GY+ROWS*TILE+6, W, 1, 15);
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const X = GX+x*TILE, Y = GY+y*TILE;
+    px(X+1, Y+1, TILE-2, TILE-2, 14);            // 一整塊土，不要棋盤（製作人看得出來）
+    px(X, Y, TILE, 1, 15); px(X, Y, 1, TILE, 15); // 只留犁出來的格線
+    if((x*7+y*13)%3===0) px(X+5+((x*5+y*3)%9), Y+6+((x+y*7)%9), 2, 1, 15); // 幾顆土粒
+    const c = cellAt(x,y);
+    if(c){
+      const t = c.grow / KIND[c.kind].grow;
+      if(!(drag && drag.from.x===x && drag.from.y===y))
+        drawPlant(X+TILE/2, Y+TILE/2+4, c.kind, t, c.pop);
+      if(!c.ready){ // 生長條
+        px(X+3, Y+TILE-4, TILE-6, 2, 8);
+        px(X+3, Y+TILE-4, Math.floor((TILE-6)*Math.min(1,t)), 2, 10);
+      }
+    }
+  }
+  // 倉庫
+  px(barn.x-14, barn.y-13, 28, 18, 15);
+  px(barn.x-13, barn.y-12, 26, 16, 2);
+  px(barn.x-13, barn.y-12, 26, 4, 3);     // 屋頂
+  px(barn.x-5, barn.y-4, 10, 8, 4);       // 門口的光
+  px(barn.x-5, barn.y-4, 10, 1, 15);
+  if(drag) { px(barn.x-16, barn.y-15, 32, 22, 4); px(barn.x-14, barn.y-13, 28, 18, 2); px(barn.x-13, barn.y-12, 26, 4, 3); px(barn.x-5, barn.y-4, 10, 8, 4); }
+
+  folk.forEach(drawFolk);
+
+  if(drag){
+    const c = cellAt(drag.from.x, drag.from.y);
+    if(c) drawPlant(drag.px, drag.py-4, c.kind, 0, 0.4);
+  }
+
+  // 兩顆按鈕（錢的出口）
+  for(const [k, b] of Object.entries(BTN)){
+    const cost = k === 'hire' ? hireCost : waterCost;
+    const can = coins >= cost;
+    px(b.x, b.y, b.w, b.h, 15);
+    px(b.x+1, b.y+1, b.w-2, b.h-2, can ? 1 : 8);
+    txt(b.x+7, b.y+6, (k==='hire' ? '雇幫手 ' : '澆水 ') + cost, can ? 4 : 14);
+  }
+
+  // 上方細欄
+  px(0,0,W,16,1);
+  txt(4, 4, '金 '+coins+' / '+goal, 4);
+  txt(W-76, 4, '力 ', 12);
+  for(let i=0;i<energyMax;i++) px(W-62+i*6, 5, 5, 6, i<energy?11:8);
+  txt(W/2-14, 4, '第 '+level+' 級', 12);
+  if(msgT > 0){ txt(W/2 - msg.length*4, H-11, msg, 4); }
+  else if(coins===0) { txt(W/2-68, H-11, '點空地種東西・把兩個一樣的疊起來', 13); }
+
+  // 整數倍放大（非整數倍會讓像素糊掉），置中，多出來的邊留黑
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = P[0];
+  ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.drawImage(buf, 0,0,W,H, ox,oy, W*SC, H*SC);
+  ctx.textBaseline = 'top';
+  for(const t of texts){
+    ctx.font = (t.size*SC)+'px ui-monospace, "PingFang TC", monospace';
+    ctx.fillStyle = P[t.c];
+    ctx.fillText(t.s, ox + t.x*SC, oy + t.y*SC);
+  }
+  texts = [];
+}
+
+// 字**不畫在像素緩衝上**：那張圖會被整數倍放大，字跟著放大就變馬賽克
+// （製作人 2026-09-16：「字體很模糊，像素變成馬賽克了」）。
+// 所以先排隊，最後直接畫在最終畫布上，用真正的螢幕像素。
+let texts = [];
+function txt(x,y,s,c,size){ texts.push({x,y,s,c,size:size||8}); }
+
+function resize(){
+  const r = document.body.getBoundingClientRect();
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = Math.floor(r.width*dpr); cv.height = Math.floor(r.height*dpr);
+  cv.style.width = r.width+'px'; cv.style.height = r.height+'px';
+  SC = Math.max(1, Math.floor(Math.min(cv.width/W, cv.height/H)));  // **整數倍**
+  ox = Math.floor((cv.width - W*SC)/2);
+  oy = Math.floor((cv.height - H*SC)/2);
+}
+window.addEventListener('resize', resize); resize();
+
+load();
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  frame(dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

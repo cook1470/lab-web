@@ -1,0 +1,554 @@
+{
+ "844x390_plain": {
+  "info": {
+   "screen": "844x390",
+   "safe": {
+    "t": 0,
+    "r": 0,
+    "b": 0,
+    "l": 0
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 46.8,
+     "y": 334,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 124.3,
+     "y": 334,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 788,
+     "y": 334,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 706.3,
+     "y": 334,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 788,
+     "y": 252.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "844x390_notch": {
+  "info": {
+   "screen": "844x390",
+   "safe": {
+    "t": 44,
+    "r": 48,
+    "b": 34,
+    "l": 48
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 94.8,
+     "y": 300,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 172.3,
+     "y": 300,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 740,
+     "y": 300,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 658.3,
+     "y": 300,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 740,
+     "y": 218.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "932x430_plain": {
+  "info": {
+   "screen": "932x430",
+   "safe": {
+    "t": 0,
+    "r": 0,
+    "b": 0,
+    "l": 0
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 46.8,
+     "y": 374,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 124.3,
+     "y": 374,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 876,
+     "y": 374,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 794.3,
+     "y": 374,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 876,
+     "y": 292.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "932x430_notch": {
+  "info": {
+   "screen": "932x430",
+   "safe": {
+    "t": 44,
+    "r": 48,
+    "b": 34,
+    "l": 48
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 94.8,
+     "y": 340,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 172.3,
+     "y": 340,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 828,
+     "y": 340,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 746.3,
+     "y": 340,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 828,
+     "y": 258.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "20_9_plain": {
+  "info": {
+   "screen": "1170x540",
+   "safe": {
+    "t": 0,
+    "r": 0,
+    "b": 0,
+    "l": 0
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 46.8,
+     "y": 484,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 124.3,
+     "y": 484,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 1114,
+     "y": 484,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 1032.3,
+     "y": 484,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 1114,
+     "y": 402.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "20_9_notch": {
+  "info": {
+   "screen": "1170x540",
+   "safe": {
+    "t": 44,
+    "r": 48,
+    "b": 34,
+    "l": 48
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 94.8,
+     "y": 450,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 172.3,
+     "y": 450,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 1066,
+     "y": 450,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 984.3,
+     "y": 450,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 1066,
+     "y": 368.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "21_9_plain": {
+  "info": {
+   "screen": "1200x540",
+   "safe": {
+    "t": 0,
+    "r": 0,
+    "b": 0,
+    "l": 0
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 46.8,
+     "y": 484,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 124.3,
+     "y": 484,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 1144,
+     "y": 484,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 1062.3,
+     "y": 484,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 1144,
+     "y": 402.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ },
+ "21_9_notch": {
+  "info": {
+   "screen": "1200x540",
+   "safe": {
+    "t": 44,
+    "r": 48,
+    "b": 34,
+    "l": 48
+   },
+   "buttons": [
+    {
+     "key": "left",
+     "label": "◀",
+     "sub": "移動",
+     "x": 94.8,
+     "y": 450,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "right",
+     "label": "▶",
+     "sub": "",
+     "x": 172.3,
+     "y": 450,
+     "r": 32.8,
+     "tapSize": 65.5,
+     "insideSafe": true
+    },
+    {
+     "key": "attack",
+     "label": "攻擊",
+     "sub": "長按＝重擊",
+     "x": 1096,
+     "y": 450,
+     "r": 42,
+     "tapSize": 84,
+     "insideSafe": true
+    },
+    {
+     "key": "parry",
+     "label": "招架",
+     "sub": "",
+     "x": 1014.3,
+     "y": 450,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    },
+    {
+     "key": "jump",
+     "label": "跳",
+     "sub": "",
+     "x": 1096,
+     "y": 368.3,
+     "r": 27.7,
+     "tapSize": 55.4,
+     "insideSafe": true
+    }
+   ],
+   "overlaps": [],
+   "hintVisible": true,
+   "hintFontPx": 16,
+   "idleAlpha": 0.78
+  },
+  "idleAlpha": 0.32,
+  "errs": []
+ }
+}

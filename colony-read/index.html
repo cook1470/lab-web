@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>村子</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const Q=new URLSearchParams(location.search);
+const NAMES=['阿明','小樹','阿桃','大山','小雲','阿禾'];
+const CLOTH=['#c0392b','#2e86de','#f1c40f','#27ae60','#8e44ad','#e67e22'];
+const HAIR=['#3b2412','#111','#6b3b12','#222','#5a3a1a','#111'];
+const cv=document.getElementById('c'),g=cv.getContext('2d');g.imageSmoothingEnabled=false;
+const GY=600,X=x=>60+x*16.4;
+let T,benchDay={};
+function sky(ph){if(ph<4)return['#f6c9a0','#a9c7e0'];if(ph<34)return['#6fb3e8','#bfe0f5'];if(ph<54)return['#e8834a','#5a4a7a'];return['#141a33','#0a0d1c'];}
+function draw(tt){
+ const i=Math.max(0,Math.min(T.frames.length-1,Math.floor(tt))),a=T.frames[i],b=T.frames[Math.min(i+1,T.frames.length-1)],u=tt-i;
+ const ph=a.t%60,dark=ph>=54;
+ const [s1,s2]=sky(ph);const gr=g.createLinearGradient(0,0,0,GY);gr.addColorStop(0,s2);gr.addColorStop(1,s1);g.fillStyle=gr;g.fillRect(0,0,1280,GY);
+ g.fillStyle=dark?'#1d2a1a':'#5d8a3a';g.fillRect(0,GY,1280,120);g.fillStyle=dark?'#15200f':'#4a7030';g.fillRect(0,GY,1280,6);
+ // 高處（屋頂邊）
+ g.fillStyle=dark?'#2a2a30':'#7a6a5a';g.fillRect(X(5)-50,GY-70,100,70);g.fillStyle=dark?'#3a2020':'#8a3a2a';g.fillRect(X(5)-56,GY-78,112,10);
+ // 田
+ for(let k=-3;k<=3;k++){g.fillStyle=dark?'#2a2a10':'#b89a3a';g.fillRect(X(18)+k*14-3,GY-14,6,14);}
+ // 屋
+ for(const hx of T.meta.houses){g.fillStyle=dark?'#2b2320':'#c9a37a';g.fillRect(X(hx)-40,GY-70,80,70);g.fillStyle=dark?'#3a1515':'#9b3b2b';g.beginPath();g.moveTo(X(hx)-50,GY-70);g.lineTo(X(hx),GY-110);g.lineTo(X(hx)+50,GY-70);g.fill();
+  g.fillStyle=dark?(ph<58?'#f5c542':'#111'):'#5a3a20';g.fillRect(X(hx)-8,GY-34,16,34);}
+ // 溪與溪盡頭
+ g.fillStyle=dark?'#1a2a4a':'#4a90c8';g.fillRect(X(44)-60,GY,120,10);g.fillRect(X(44)+60,GY+4,X(68)-X(44)-20,6);g.beginPath();g.ellipse(X(68)+10,GY+6,60,10,0,0,7);g.fill();
+ // 森林
+ for(const k of [-3,-2,-1,0,1,2,3]){const tx=X(58)+k*26;g.fillStyle=dark?'#1a1208':'#6a4a2a';g.fillRect(tx-3,GY-30,6,30);g.fillStyle=dark?'#0f2010':'#2e6b30';g.fillRect(tx-14,GY-66+(k&1)*8,28,40);}
+ // 長椅
+ for(const [k,d] of Object.entries(benchDay))if(a.day>=d){const bx=X(T.bx[k]);g.fillStyle=dark?'#2a1a10':'#7a4a20';g.fillRect(bx-22,GY-14,44,5);g.fillRect(bx-20,GY-9,4,9);g.fillRect(bx+16,GY-9,4,9);}
+ // 人
+ const ps=a.people.filter(p=>p.here).map(p=>{const q=b.people[p.id];let x=p.x+(q.here?(q.x-p.x)*u:0);return{p,x};});
+ const groups={};for(const o of ps){const k=Math.round(o.x);(groups[k]=groups[k]||[]).push(o);}
+ for(const gp of Object.values(groups)){gp.sort((m,n)=>m.p.id-n.p.id);gp.forEach((o,r)=>o.off=(r-(gp.length-1)/2)*30);}
+ g.font='bold 11px sans-serif';g.textAlign='center';
+ for(const o of ps){const px=Math.round(X(o.x)+o.off),id=o.p.id;const onRoof=Math.abs(o.x-5)<0.5&&ph>=34&&ph<54;const base=onRoof?GY-78:GY;
+  const walk=Math.round((o.x*3)%2);
+  g.fillStyle='#222';g.fillRect(px-5,base-12,4,12-walk);g.fillRect(px+1,base-12,4,12-(1-walk)); //腿
+  g.fillStyle=CLOTH[id];g.fillRect(px-7,base-26,14,15); //身
+  g.fillStyle='#f0c8a0';g.fillRect(px-5,base-36,10,10); //頭
+  g.fillStyle=HAIR[id];g.fillRect(px-5,base-37,10,4);
+  g.fillStyle=dark?'#ddd':'#fff';g.strokeStyle='#000';g.lineWidth=3;g.strokeText(NAMES[id],px,base-41);g.fillText(NAMES[id],px,base-41);}
+}
+fetch(Q.get('trace')).then(r=>r.json()).then(j=>{T=j;T.bx={};
+ for(const f of T.frames)for(const p of f.people)if(p.spot&&p.spot.startsWith('bench')){if(benchDay[p.spot]===undefined){benchDay[p.spot]=f.day;}}
+ T.bx.bench0=14;for(const k in benchDay)if(T.bx[k]===undefined)T.bx[k]=T.meta.benchCandidates[+k.slice(5)];
+ window.draw=draw;window.ready=true;
+ if(Q.get('play')){const tps=+Q.get('play');const t0=performance.now();(function loop(){const tt=(performance.now()-t0)/1000*tps;draw(tt);if(tt<T.frames.length-1)requestAnimationFrame(loop);else window.done=true;})();}
+ else draw(+(Q.get('t')||0));});
+</script>
